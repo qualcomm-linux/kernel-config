@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
 
       - name: Pull docker image
-        uses: ./.github/actions/pull_docker_image
+        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
         with:
           image: ${{ inputs.docker_image }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -38,7 +38,7 @@ jobs:
         run: cd .. && git clone https://github.com/qualcomm-linux/job_render
 
       - name: Create lava job definition
-        uses: ./.github/actions/lava_job_render
+        uses: qualcomm-linux/kernel-config/.github/actions/lava_job_render@main
         id: create_job_definition
         with:
           docker_image: ${{ inputs.docker_image }}
@@ -96,3 +96,4 @@ jobs:
           </details>
           '
           echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+

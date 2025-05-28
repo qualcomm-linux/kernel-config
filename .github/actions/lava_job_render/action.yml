@@ -65,7 +65,7 @@ runs:
 
     - name: Upload metadata.json
       id: upload_metadata
-      uses: ./.github/actions/aws_s3_helper
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
       with:
         local_file: ../job_render/data/metadata.json
         s3_bucket: qli-prd-kernel-gh-artifacts
