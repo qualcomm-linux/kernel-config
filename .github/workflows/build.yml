@@ -25,10 +25,10 @@ jobs:
           base_branch: ${{ github.base_ref }}
           pr_number: ${{ github.event.pull_request.number }}
 
-      - name: Pull docker image
-        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+      - name: Build docker image
+        uses: qualcomm-linux/kernel-config/.github/actions/build_docker_image@main
         with:
-          image: ${{ inputs.docker_image }}
+          image_tag: ${{ inputs.docker_image }}
 
       - name: Build workspace
         id: build_workspace
