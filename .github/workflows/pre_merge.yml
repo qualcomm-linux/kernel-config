@@ -1,6 +1,5 @@
 name: pre_merge
 on:
-  pull_request_target:
   workflow_call:
 
 jobs:
