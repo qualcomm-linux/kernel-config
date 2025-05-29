@@ -7,10 +7,6 @@ inputs:
     required: true
     default: kmake-image:latest
 
-  github_token:
-    description: The GitHub token to use for authentication
-    required: true
-
 runs:
   using: "composite"
   steps:
@@ -19,8 +15,14 @@ runs:
       run: |
         git clone https://github.com/qualcomm-linux/kmake-image.git
 
-    - name: Build docker image
-      shell: bash
-      run: |
-        cd kmake-image
-        docker build . -t kmake-image
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        push: false
+        tags: kmake-image:latest
+        context: kmake-image
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
