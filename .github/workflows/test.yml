@@ -22,10 +22,10 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Pull docker image
-        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+      - name: Build docker image
+        uses: qualcomm-linux/kernel-config/.github/actions/build_docker_image@main
         with:
-          image: ${{ inputs.docker_image }}
+          image_tag: ${{ inputs.docker_image }}
 
       - name: Download URLs list
         uses: actions/download-artifact@v4
