@@ -3,7 +3,7 @@ inputs:
   docker_image:
     description: Docker image
     required: true
-    default: kmake-image:latest
+    default: kmake-image:ver.1.0
 
 runs:
   using: "composite"
@@ -24,7 +24,7 @@ runs:
             }
             return null;
           }
-          const filePath = p.join(process.env.GITHUB_WORKSPACE, 'presigned_urls.json');
+          const filePath = p.join(process.env.GITHUB_WORKSPACE, `${process.env.MACHINE}_presigned_urls.json`);
           if (fs.existsSync(filePath)) {
             console.log("File exists");
           } else {
@@ -37,7 +37,8 @@ runs:
           const modulesTarUrl = findUrlByFilename('modules.tar.xz');
           const imageUrl = findUrlByFilename('Image');
           const vmlinuxUrl = findUrlByFilename('vmlinux');
-          const dtbUrl = findUrlByFilename('qcs6490-rb3gen2.dtb');
+          const dtbFilename = `${process.env.MACHINE_NAME}.dtb`;
+          const dtbUrl = findUrlByFilename(dtbFilename);
           // Set outputs
           core.setOutput('modules_url', modulesTarUrl);
           core.setOutput('image_url', imageUrl);
@@ -61,7 +62,7 @@ runs:
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
           -e dtb_url="${{ steps.process_urls.outputs.dtb_url }}" \
           ${{ inputs.docker_image }} \
-          jq '.artifacts["dtbs/qcom/qcs6490-rb3gen2.dtb"] = env.dtb_url' data/metadata.json > temp.json && mv temp.json data/metadata.json
+          jq '.artifacts["dtbs/qcom/${{ env.MACHINE_NAME }}.dtb"] = env.dtb_url' data/metadata.json > temp.json && mv temp.json data/metadata.json
 
     - name: Upload metadata.json
       id: upload_metadata
@@ -119,7 +120,7 @@ runs:
       run: |
         cd ../job_render
         ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 7600)"
-        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-rb3gen2-image-qcom-armv8a.cpio.gz --expires 7600)"
+        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.MACHINE_NAME }}-image-qcom-armv8a.cpio.gz --expires 7600)"
         # using ramdisk_url
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \
@@ -141,14 +142,20 @@ runs:
     - name: Create lava_job_definition
       shell: bash
       run: |
+        # Extract target Name
+        target=$(echo "${{ env.MACHINE_NAME }}" | cut -d '-' -f1)
+
         cd ../job_render
-        mkdir renders
+        mkdir -p renders
+
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \
           --workdir="$PWD" \
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          -e TARGET="$target" \
+          -e TARGET_DTB="${{ env.MACHINE_NAME }}" \
           ${{ inputs.docker_image }} \
           sh -c 'export BOOT_METHOD=fastboot && \
-            export TARGET=qcs6490 && \
-            export TARGET_DTB=qcs6490-rb3gen2 && \
+            export TARGET=${TARGET} && \
+            export TARGET_DTB=${TARGET_DTB} && \
             python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
