@@ -8,13 +8,23 @@ on:
         description: Docker image
         type: string
         required: true
-        default: kmake-image:latest
+        default: kmake-image:ver.1.0
+
+      build_matrix:
+        description: Build matrix for multi target builds
+        type: string
+        required: true
+
 
 jobs:
   test:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    strategy:
+      fail-fast: false
+      matrix:
+        build_matrix: ${{ fromJson(inputs.build_matrix) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,7 +40,7 @@ jobs:
       - name: Download URLs list
         uses: actions/download-artifact@v4
         with:
-          name: presigned_urls.json
+          name: ${{ matrix.build_matrix.machine }}_presigned_urls.json
           path: ${{ github.workspace }}
 
       - name: Clone lava job render scripts
@@ -41,6 +51,9 @@ jobs:
         id: create_job_definition
         with:
           docker_image: ${{ inputs.docker_image }}
+        env:
+          MACHINE: ${{ matrix.build_matrix.machine }}
+          MACHINE_NAME: ${{ matrix.build_matrix.name }}
 
       - name: Submit lava job
         id: submit_job
