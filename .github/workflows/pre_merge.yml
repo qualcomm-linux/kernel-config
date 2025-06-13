@@ -3,15 +3,22 @@ on:
   workflow_call:
 
 jobs:
+  loading:
+    uses: ./.github/workflows/loading.yml
+    secrets: inherit
+
   build:
+    needs: loading
     uses: ./.github/workflows/build.yml
     secrets: inherit
     with:
       docker_image: kmake-image:ver.1.0
+      build_matrix: ${{ needs.loading.outputs.build_matrix }}
 
   test:
-    needs: [build]
+    needs: [loading, build]
     uses: ./.github/workflows/test.yml
     secrets: inherit
     with:
       docker_image: kmake-image:ver.1.0
+      build_matrix: ${{ needs.loading.outputs.build_matrix }}

@@ -13,6 +13,10 @@ inputs:
     description: Download file paths
     required: false
     default: ''
+  download_location:
+    description: file download download_location
+    required: false
+    default: .
   mode:
     description: Mode of operation (upload/download)
     required: true
@@ -73,7 +77,7 @@ runs:
           download)
             #Download The required file from s3
             echo "Downloading files from S3 bucket..."
-            aws s3 sync s3://${{ inputs.s3_bucket }}/${{ inputs.download_file }} .
+            aws s3 cp s3://${{ inputs.s3_bucket }}/${{ inputs.download_file }} ${{ inputs.download_location }}
             ;;
           *)
             echo "Invalid mode. Use 'upload' or 'download'."
@@ -86,5 +90,5 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: presigned_urls.json
-        path: ${{ github.workspace }}/presigned_urls.json
+        path: ${{ github.workspace }}/${{ env.MACHINE }}_presigned_urls.json
         retention-days: 3
