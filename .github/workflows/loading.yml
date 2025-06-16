@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          repository: qualcomm-linux/kernel-config
 
       - name: Load Parameters
         id: loading
