@@ -17,7 +17,7 @@ runs:
         script: |
           const fs = require('fs');
           const path = require('path');
-          const filePath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'MACHINES.json');
+          const filePath = path.join('ci', 'MACHINES.json');
           let file;
           try {
             if (!fs.existsSync(filePath)) {
