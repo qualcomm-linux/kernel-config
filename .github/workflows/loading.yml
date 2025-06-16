@@ -9,11 +9,16 @@ on:
         description: Build matrix
         value: ${{ jobs.loading.outputs.build_matrix }}
 
+      full_matrix:
+        description: Full Matrix containing lava description
+        value: ${{ jobs.loading.outputs.full_matrix }}
+
 jobs:
   loading:
     runs-on: ubuntu-latest
     outputs:
       build_matrix: ${{ steps.loading.outputs.build_matrix }}
+      full_matrix: ${{ steps.loading.outputs.full_matrix }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -24,3 +29,4 @@ jobs:
       - name: Load Parameters
         id: loading
         uses: qualcomm-linux/kernel-config/.github/actions/loading@test
+

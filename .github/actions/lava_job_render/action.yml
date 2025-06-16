@@ -62,7 +62,7 @@ runs:
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
           -e dtb_url="${{ steps.process_urls.outputs.dtb_url }}" \
           ${{ inputs.docker_image }} \
-          jq '.artifacts["dtbs/qcom/${{ env.MACHINE_NAME }}.dtb"] = env.dtb_url' data/metadata.json > temp.json && mv temp.json data/metadata.json
+          jq '.artifacts["dtbs/qcom/${{ env.MACHINE }}.dtb"] = env.dtb_url' data/metadata.json > temp.json && mv temp.json data/metadata.json
 
     - name: Upload metadata.json
       id: upload_metadata
@@ -142,9 +142,6 @@ runs:
     - name: Create lava_job_definition
       shell: bash
       run: |
-        # Extract target Name
-        target=$(echo "${{ env.MACHINE }}" | cut -d '-' -f1)
-
         cd ../job_render
         mkdir -p renders
 
@@ -152,7 +149,7 @@ runs:
           --user "$(id -u):$(id -g)" \
           --workdir="$PWD" \
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e TARGET="$target" \
+          -e TARGET="${{ env.LAVA_NAME }}" \
           -e TARGET_DTB="${{ env.MACHINE }}" \
           ${{ inputs.docker_image }} \
           sh -c 'export BOOT_METHOD=fastboot && \

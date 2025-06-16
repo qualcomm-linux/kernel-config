@@ -15,6 +15,11 @@ on:
         type: string
         required: true
 
+      full_matrix:
+        description: Full matrix containing lava description
+        type: string
+        required: true
+
 
 jobs:
   test:
@@ -45,7 +50,25 @@ jobs:
           path: ${{ github.workspace }}
 
       - name: Clone lava job render scripts
-        run: cd .. && git clone https://github.com/qualcomm-linux/job_render
+        run: cd .. && git clone https://github.com/sgaud-quic/job_render
+
+      - name: Extract the LAVA machine name
+        id: get_lavaname
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fullMatrix = JSON.parse(`${{ inputs.full_matrix }}`);
+            const currentMachine = `${{ matrix.build_matrix.machine }}`;
+
+            const entry = fullMatrix.find(item => item.machine === currentMachine);
+            if (!entry) {
+              core.setFailed(`No entry found in full matrix for machine: ${currentMachine}`);
+              return;
+            }
+
+            const lavaname = entry.lavaname;
+            console.log(`Lavaname for ${currentMachine} is ${lavaname}`);
+            core.setOutput("LAVANAME", lavaname);
 
       - name: Create lava job definition
         uses: qualcomm-linux/kernel-config/.github/actions/lava_job_render@test
@@ -55,6 +78,7 @@ jobs:
         env:
           FIRMWARE: ${{ matrix.build_matrix.firmware }}
           MACHINE: ${{ matrix.build_matrix.machine }}
+          LAVA_NAME: ${{ steps.get_lavaname.outputs.LAVANAME }}
 
       - name: Submit lava job
         id: submit_job
@@ -109,5 +133,3 @@ jobs:
           </details>
           '
           echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
-
-
