@@ -31,23 +31,14 @@ runs:
               return;
             }
             file = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            if (!file.MACHINE || !Array.isArray(file.MACHINE)) {
+              core.setFailed(`Invalid MACHINES.json structure: "MACHINE" key not found or not an array.`);
+              return;
+            }
           } catch (err) {
             core.setFailed(`Failed to load or parse MACHINES.json: ${err.message}`);
             return;
           }
-          const matrix = Object.entries(file).map(([machine, name]) => ({ machine, name }));
+          const matrix = file.MACHINE.map(machine => ({ machine }));
           core.setOutput('build_matrix', JSON.stringify(matrix));
           console.log(matrix);
-
-    - name: Update Summary
-      shell: bash
-      run: |
-        echo "## Build Matrix" >> $GITHUB_STEP_SUMMARY
-        echo "| Machine | Name |" >> $GITHUB_STEP_SUMMARY
-        echo "| ------- | -------- |" >> $GITHUB_STEP_SUMMARY
-        build_matrix=$(echo '${{ steps.set-matrix.outputs.build_matrix }}' | jq -c '.') # Ensure valid JSON format
-        echo "$build_matrix" | jq -c '.[]' | while read -r entry; do
-          machine=$(echo "$entry" | jq -r '.machine')
-          name=$(echo "$entry" | jq -r '.name')
-          echo "| $machine | $name |" >> $GITHUB_STEP_SUMMARY
-        done

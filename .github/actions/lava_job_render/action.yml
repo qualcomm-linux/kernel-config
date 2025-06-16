@@ -37,7 +37,7 @@ runs:
           const modulesTarUrl = findUrlByFilename('modules.tar.xz');
           const imageUrl = findUrlByFilename('Image');
           const vmlinuxUrl = findUrlByFilename('vmlinux');
-          const dtbFilename = `${process.env.MACHINE_NAME}.dtb`;
+          const dtbFilename = `${process.env.MACHINE}.dtb`;
           const dtbUrl = findUrlByFilename(dtbFilename);
           // Set outputs
           core.setOutput('modules_url', modulesTarUrl);
@@ -120,7 +120,7 @@ runs:
       run: |
         cd ../job_render
         ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 7600)"
-        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.MACHINE_NAME }}-image-qcom-armv8a.cpio.gz --expires 7600)"
+        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.MACHINE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
         # using ramdisk_url
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \

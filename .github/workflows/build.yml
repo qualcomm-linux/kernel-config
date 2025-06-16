@@ -56,7 +56,7 @@ jobs:
           echo "${{ github.workspace }}/modules.tar.xz" >> $workspace/../artifacts/file_list.txt
           echo "$workspace/../kobj/arch/arm64/boot/Image" >> $workspace/../artifacts/file_list.txt
           echo "$workspace/../kobj/vmlinux" >> $workspace/../artifacts/file_list.txt
-          echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${{ matrix.build_matrix.name }}.dtb" >> $workspace/../artifacts/file_list.txt
+          echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${{ matrix.build_matrix.machine }}.dtb" >> $workspace/../artifacts/file_list.txt
 
 
       - name: Upload artifacts

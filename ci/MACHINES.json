@@ -1,5 +1,3 @@
 {
-    "Lemans": "qcs9100-ride",
-    "Monaco": "qcs8300-ride",
-    "Kodiak": "qcs6490-rb3gen2"
+    "MACHINE": [ "qcs9100-ride", "qcs8300-ride", "qcs6490-rb3gen2" ]
 }
