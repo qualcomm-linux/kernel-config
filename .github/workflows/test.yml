@@ -40,7 +40,8 @@ jobs:
       - name: Download URLs list
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.build_matrix.machine }}_presigned_urls.json
+          name: presigned_urls.json
+          merge-multiple: true
           path: ${{ github.workspace }}
 
       - name: Clone lava job render scripts
@@ -52,8 +53,8 @@ jobs:
         with:
           docker_image: ${{ inputs.docker_image }}
         env:
+          FIRMWARE: ${{ matrix.build_matrix.firmware }}
           MACHINE: ${{ matrix.build_matrix.machine }}
-          MACHINE_NAME: ${{ matrix.build_matrix.name }}
 
       - name: Submit lava job
         id: submit_job
@@ -108,4 +109,5 @@ jobs:
           </details>
           '
           echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
 

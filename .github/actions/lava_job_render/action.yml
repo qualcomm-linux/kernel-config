@@ -24,7 +24,7 @@ runs:
             }
             return null;
           }
-          const filePath = p.join(process.env.GITHUB_WORKSPACE, `${process.env.MACHINE}_presigned_urls.json`);
+          const filePath = p.join(process.env.GITHUB_WORKSPACE, 'presigned_urls.json');
           if (fs.existsSync(filePath)) {
             console.log("File exists");
           } else {
@@ -37,7 +37,7 @@ runs:
           const modulesTarUrl = findUrlByFilename('modules.tar.xz');
           const imageUrl = findUrlByFilename('Image');
           const vmlinuxUrl = findUrlByFilename('vmlinux');
-          const dtbFilename = `${process.env.MACHINE_NAME}.dtb`;
+          const dtbFilename = `${process.env.MACHINE}.dtb`;
           const dtbUrl = findUrlByFilename(dtbFilename);
           // Set outputs
           core.setOutput('modules_url', modulesTarUrl);
@@ -120,7 +120,7 @@ runs:
       run: |
         cd ../job_render
         ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 7600)"
-        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.MACHINE_NAME }}-image-qcom-armv8a.cpio.gz --expires 7600)"
+        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
         # using ramdisk_url
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \
@@ -143,7 +143,7 @@ runs:
       shell: bash
       run: |
         # Extract target Name
-        target=$(echo "${{ env.MACHINE_NAME }}" | cut -d '-' -f1)
+        target=$(echo "${{ env.MACHINE }}" | cut -d '-' -f1)
 
         cd ../job_render
         mkdir -p renders
@@ -153,9 +153,10 @@ runs:
           --workdir="$PWD" \
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
           -e TARGET="$target" \
-          -e TARGET_DTB="${{ env.MACHINE_NAME }}" \
+          -e TARGET_DTB="${{ env.MACHINE }}" \
           ${{ inputs.docker_image }} \
           sh -c 'export BOOT_METHOD=fastboot && \
             export TARGET=${TARGET} && \
             export TARGET_DTB=${TARGET_DTB} && \
             python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
+

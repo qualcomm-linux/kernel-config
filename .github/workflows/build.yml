@@ -17,10 +17,6 @@ jobs:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
-    strategy:
-      fail-fast: false
-      matrix:
-        build_matrix: ${{ fromJson(inputs.build_matrix) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,8 +52,12 @@ jobs:
           echo "${{ github.workspace }}/modules.tar.xz" >> $workspace/../artifacts/file_list.txt
           echo "$workspace/../kobj/arch/arm64/boot/Image" >> $workspace/../artifacts/file_list.txt
           echo "$workspace/../kobj/vmlinux" >> $workspace/../artifacts/file_list.txt
-          echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${{ matrix.build_matrix.name }}.dtb" >> $workspace/../artifacts/file_list.txt
 
+          # Loop through all machines from the build_matrix input
+          machines='${{ inputs.build_matrix }}'
+          for machine in $(echo "$machines" | jq -r '.[].machine'); do
+            echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}.dtb" >> $workspace/../artifacts/file_list.txt
+          done
 
       - name: Upload artifacts
         uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@test
@@ -65,8 +65,6 @@ jobs:
           s3_bucket: qli-prd-kernel-gh-artifacts
           local_file: ${{ steps.sync.outputs.workspace_path }}/../artifacts/file_list.txt
           mode: multi-upload
-        env:
-          MACHINE: ${{ matrix.build_matrix.machine }}
 
       - name: Clean up
         run: |
@@ -91,3 +89,4 @@ jobs:
           </details>
           '
           echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+

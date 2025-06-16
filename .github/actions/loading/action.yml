@@ -23,7 +23,7 @@ runs:
         script: |
           const fs = require('fs');
           const path = require('path');
-          const filePath = path.join('ci', 'MACHINES.json');
+          const filePath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'MACHINES.json');
           let file;
           try {
             if (!fs.existsSync(filePath)) {
@@ -35,19 +35,7 @@ runs:
             core.setFailed(`Failed to load or parse MACHINES.json: ${err.message}`);
             return;
           }
-          const matrix = Object.entries(file).map(([machine, name]) => ({ machine, name }));
+          const matrix = Object.entries(file).map(([machine, firmware]) => ({ machine, firmware }));
           core.setOutput('build_matrix', JSON.stringify(matrix));
           console.log(matrix);
 
-    - name: Update Summary
-      shell: bash
-      run: |
-        echo "## Build Matrix" >> $GITHUB_STEP_SUMMARY
-        echo "| Machine | Name |" >> $GITHUB_STEP_SUMMARY
-        echo "| ------- | -------- |" >> $GITHUB_STEP_SUMMARY
-        build_matrix=$(echo '${{ steps.set-matrix.outputs.build_matrix }}' | jq -c '.') # Ensure valid JSON format
-        echo "$build_matrix" | jq -c '.[]' | while read -r entry; do
-          machine=$(echo "$entry" | jq -r '.machine')
-          name=$(echo "$entry" | jq -r '.name')
-          echo "| $machine | $name |" >> $GITHUB_STEP_SUMMARY
-        done

@@ -1,5 +1,5 @@
 {
-    "Lemans": "qcs9100-ride",
-    "Monaco": "qcs8300-ride",
-    "Kodiak": "qcs6490-rb3gen2"
+    "qcs6490-rb3gen2": "rb3gen2",
+    "qcs9100-ride-r3": "sa8775p-ride",
+    "qcs8300-ride": "qcs8300-ride"
 }

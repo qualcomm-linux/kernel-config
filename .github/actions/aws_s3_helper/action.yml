@@ -89,6 +89,7 @@ runs:
       if: ${{ inputs.mode == 'multi-upload' }}
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.MACHINE }}_presigned_urls.json
+        name: presigned_urls.json
         path: ${{ github.workspace }}/presigned_urls.json
         retention-days: 3
+
