@@ -12,6 +12,11 @@ on:
         type: string
         required: true
 
+      bootbins:
+        description: Boot bins for Flat META
+        type: string
+        required: true
+
 jobs:
   build:
     runs-on:
@@ -41,6 +46,78 @@ jobs:
         with:
           docker_image: ${{ inputs.docker_image }}
           workspace_path: ${{ steps.sync.outputs.workspace_path }}
+
+      - name: Generate Flat Build
+        run: |
+          set -x
+          bootbins='${{ inputs.bootbins }}'
+          echo "$bootbins"
+          workspace=${{ steps.sync.outputs.workspace_path }}
+          cd $workspace/../
+          git clone https://github.com/qualcomm-linux/qcom-ptool.git
+          for row in $(echo "$bootbins" | jq -c '.[]'); do
+          (
+            target=$(echo "$row" | jq -r '.target')
+            buildid=$(echo "$row" | jq -r '.buildid')
+            firmwareid=$(echo "$row" | jq -r '.firmwareid')
+            echo "DT : $target"
+            echo "BuildId : $buildid"
+            echo "FirmwareId : $firmwareid"
+            echo "-----------------------------"
+            platform=$(echo "$buildid" | cut -d '.' -f1)
+            echo "$platform"
+            mkdir -p $workspace/../flatbuild-"$platform"
+            cd $workspace/../flatbuild-"$platform"
+            wget https://artifactory-las.qualcomm.com/artifactory/lint-lv-local/k2c_nhlos_fw/$buildid/common/build/ufs/bin/"$platform"_bootbinaries.zip
+            unzip "$platform"_bootbinaries.zip
+            python $workspace/../qcom-ptool/ptool.py -x "$platform"_bootbinaries/partition_ufs.xml -t "$platform"_bootbinaries/
+            cd $workspace/../flatbuild-"$platform"/"$platform"_bootbinaries/
+            rm -rf rawprogram0_* rawprogram1_* rawprogram2_* rawprogram3_* rawprogram4_* rawprogram5_*
+            sed -i '/system.img/d' rawprogram0.xml
+            mkdir -p $workspace/../flatbuild-"$platform"/artifacts
+            cd $workspace/../flatbuild-"$platform"/artifacts
+
+            #This needs to be downloaded from S3 bucket.
+            wget http://hu-sgaud-hyd:8000/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz
+            wget http://hu-sgaud-hyd:8000/initramfs-firmware-"$firmwareid"-image-qcom-armv8a.cpio.gz
+
+            gunzip -c initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz > initramfs-kerneltest-full-image-qcom-armv8a.cpio
+            gunzip -c initramfs-firmware-"$firmwareid"-image-qcom-armv8a.cpio.gz > initramfs-firmware-"$firmwareid"-image-qcom-armv8a.cpio
+            cat initramfs-kerneltest-full-image-qcom-armv8a.cpio initramfs-firmware-"$firmwareid"-image-qcom-armv8a.cpio > merged-initramfs-"$firmwareid".cpio
+            gzip merged-initramfs-"$firmwareid".cpio
+
+            (cd $workspace/../kobj/tar-install ; find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> $workspace/../flatbuild-"$platform"/artifacts/merged-initramfs-"$firmwareid".cpio.gz)
+
+            wget -O $workspace/../flatbuild-"$platform"/artifacts/systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb
+            dpkg-deb -xv $workspace/../flatbuild-"$platform"/artifacts/systemd-boot-efi.deb $workspace/../flatbuild-"$platform"/artifacts/systemd
+            cd $workspace/../flatbuild-"$platform"
+
+            docker run -i --rm \
+              --user $(id -u):$(id -g) \
+              --workdir="$PWD" \
+              -v "$(dirname $PWD)":"$(dirname $PWD)" \
+              ${{ inputs.docker_image }} bash -c "
+              generate_boot_bins.sh efi --ramdisk artifacts/merged-initramfs-"$firmwareid".cpio.gz \
+                --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
+                --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
+                --linux ../kobj/arch/arm64/boot/Image \
+                --output images
+            "
+            docker run -i --rm \
+              --user $(id -u):$(id -g) \
+              --workdir="$PWD" \
+              -v "$(dirname $PWD)":"$(dirname $PWD)" \
+              ${{ inputs.docker_image }} bash -c "
+                generate_boot_bins.sh dtb --input ../kobj/arch/arm64/boot/dts/qcom/"$target".dtb --output images
+            "
+
+            cp $workspace/../flatbuild-"$platform"/images/efi.bin $workspace/../flatbuild-"$platform"/"$platform"_bootbinaries
+            cp $workspace/../flatbuild-"$platform"/images/dtb.bin $workspace/../flatbuild-"$platform"/"$platform"_bootbinaries
+
+            #Upload these to location from where Axiom jobs can be triggered.
+            #$workspace/../flatbuild-"$platform"/"$platform"_bootbinaries
+          )
+          done
 
       - name: Create file list for artifacts upload
         run: |
