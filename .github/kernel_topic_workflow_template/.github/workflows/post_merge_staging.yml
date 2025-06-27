@@ -1,0 +1,12 @@
+name: _Tag
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - qcom-next-staging
+    
+jobs:
+  tag:
+    if: github.event.pull_request.merged == true
+    uses: qualcomm-linux/kernel-config/.github/workflows/post_merge_staging.yml@main
+	secrets: inherit

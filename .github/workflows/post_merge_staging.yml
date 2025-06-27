@@ -1,0 +1,31 @@
+name: _Tag
+on:
+   workflow_call: 
+
+jobs:
+  tag:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Tag
+        run: |
+          set -x
+          BRANCH_NAME="qcom-next"
+          CURRVER=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^EXTRAVERSION =/ {e=$3} END {print v "." p e}' Makefile)
+          TAG_NAME="${BRANCH_NAME}-${CURRVER}-$(date +%Y%m%d)"
+          git push origin qcom-next-staging:qcom-next -f
+          TAGS=$(git tag -l "${TAG_NAME}*")
+          if ! echo "$TAGS" | grep -q "^${TAG_NAME}$"; then
+            echo "Created tag: $TAG_NAME
+          else
+            i=1
+            while echo "$TAGS" | grep -q "^${TAG_NAME}\.${i}$"; do
+              ((i++))
+            done
+            TAG_NAME="${TAG_NAME}.${i}"
+            echo "Created tag: $TAG_NAME"
+          fi
+          git tag "$TAG_NAME"
+          git push origin $TAG_NAME
