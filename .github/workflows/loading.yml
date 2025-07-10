@@ -27,4 +27,4 @@ jobs:
 
       - name: Load Parameters
         id: loading
-        uses: qualcomm-linux/kernel-config/.github/actions/loading@main
+        uses: qualcomm-linux/kernel-config/.github/actions/loading@coral

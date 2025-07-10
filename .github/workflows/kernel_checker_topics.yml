@@ -1,0 +1,96 @@
+name: Kernel Checkers Topics
+on:
+   workflow_dispatch:
+    inputs:
+      pr:
+        description: pull request
+        type: string
+        required: true
+      sha:
+        description: sha
+        type: string
+        required: true
+      ref:
+        description: ref
+        type: string
+        required: true
+      repo:
+        description: repo
+        type: string
+        required: true
+
+jobs:
+  init-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Initial workflow status
+        uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@coral
+        with:
+          sha: ${{ inputs.sha }}
+          action_mode: start
+          check_name: kernel-checker
+          repo: ${{ inputs.repo }}
+
+  prepare:
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    steps:
+      - name: Checkout PR Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get base sha
+        id: get_sha
+        run: |
+          pr=${{ inputs.pr }}
+          data=$(curl -H "Authorization: token ${{secrets.PAT}}" https://api.github.com/repos/${{inputs.repo}}/pulls/$pr)
+          base_sha=$(echo "$data" | jq -r '.base.sha')
+          echo "Base SHA: $base_sha"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+  
+      - name: Set kernel workspace path
+        id: set_kernel_src
+        run: |
+          GITHUB_WORKSPACE=${{ github.workspace }}
+          if ${{ inputs.repo }} ~= "kernel-topics"; then
+            echo "kernel_src=$GITHUB_WORKSPACE/kernel" >> "$GITHUB_OUTPUT"
+          else
+            echo "kernel_src=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
+          fi
+
+    outputs:
+      kernel_src: ${{ steps.set_kernel_src.outputs.kernel_src }}
+      base_sha: ${{ steps.get_sha.outputs.base_sha }}
+
+  checker:
+    needs: [prepare, init-status]
+    uses: qualcomm-linux/kernel-checkers/.github/workflows/checker.yml@main
+    with:
+      check_name: ${{ matrix.check }}
+      kernel_src: ${{ needs.prepare.outputs.kernel_src }}
+      base_sha: ${{ needs.prepare.outputs.base_sha }}
+      head_sha: ${{ inputs.sha }}
+      base_branch: ${{ inputs.ref }}
+      pr_number: ${{ inputs.pr }}
+      topic_repo: ${{ inputs.repo }}
+
+    strategy:
+      matrix:
+        check: [check-uapi-headers, sparse-check, checkpatch,
+          dt-binding-check, dtb-check]
+      fail-fast: false
+  
+  final-status:
+    runs-on: ubuntu-latest
+    needs: [checker]
+    if: always()
+    steps:
+      - name: Final workflow status
+        uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@coral
+        with:
+          sha: ${{ github.sha }}
+          action_mode: ${{ needs.checker.result }}
+          check_name: kernel-checker
+          repo: ${{ inputs.repo }}
