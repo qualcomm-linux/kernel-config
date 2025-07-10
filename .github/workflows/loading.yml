@@ -13,12 +13,17 @@ on:
         description: Full Matrix containing lava description
         value: ${{ jobs.loading.outputs.full_matrix }}
 
+      bootbins:
+        description: Bootbins to generate Flat Build
+        value: ${{ jobs.loading.outputs.bootbins }}
+
 jobs:
   loading:
     runs-on: ubuntu-latest
     outputs:
       build_matrix: ${{ steps.loading.outputs.build_matrix }}
       full_matrix: ${{ steps.loading.outputs.full_matrix }}
+      bootbins: ${{ steps.loading.outputs.bootbins }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

@@ -14,6 +14,7 @@ jobs:
     with:
       docker_image: kmake-image:ver.1.0
       build_matrix: ${{ needs.loading.outputs.build_matrix }}
+      bootbins: ${{ needs.loading.outputs.bootbins }}
 
   test:
     needs: [loading, build]
