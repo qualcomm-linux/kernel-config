@@ -4,5 +4,5 @@ on:
 
 jobs:
   pre-merge:
-    uses: qualcomm-linux/kernel-config/.github/workflows/pre_merge.yml@main
+    uses: qualcomm-linux/kernel-config/.github/workflows/pre_merge.yml@coral
     secrets: inherit
