@@ -1,0 +1,214 @@
+defaults:
+  coral.actions/configuration:
+    application: ${{ inputs.application }}
+    external-id: ${{ inputs.externalId }}
+    labels: ${{ inputs.labels }}
+    overrides:
+      applicationSettings:
+        - name: JenkinsJobPipelineDynamicGroovyVersion
+          value: v2
+        - name: JenkinsJobPipelineName
+          value: job-pipeline-v2
+
+  runs-on:
+    coral.actions/resource:
+      compute:
+        provider: ${{ inputs.compute.provider }}
+        architecture: ${{ inputs.compute.architecture }}
+        os: ${{ inputs.compute.os }}
+        containment: ${{ inputs.compute.containment }}
+
+on:
+  workflow_call:
+    inputs:
+      workflow.repo.owner:
+        type: string
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Text
+            label: GitHub Workflow Repository Owner
+            description: Name of the User or Organization that owns the GitHub Workflow Repository
+            rules:
+              - type: required
+                message: GitHub Workflow Repository Owner is required
+
+      workflow.repo.name:
+        type: string
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Text
+            label: GitHub Workflow Name Repository
+            description: Name of the GitHub Repository that contains the Workflow files
+            rules:
+              - type: required
+                message: GitHub Workflow Repository Name is required
+
+      workflow.email.id:
+        type: number
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Email Checker GitHub Workflow ID
+            description: ID of the Email Checker GitHub Workflow to be executed
+            rules:
+              - type: required
+                message: Email Checker GitHub Workflow ID is required
+
+      workflow.premerge.id:
+        type: number
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Pre-Merge Checker GitHub Workflow ID
+            description: ID of the Pre-Merge Checker GitHub Workflow to be executed
+            rules:
+              - type: required
+                message: Pre-Merge Checker GitHub Workflow ID is required
+
+      workflow.kernel.id:
+        type: number
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Kernel Checker GitHub Workflow ID
+            description: ID of the Kernel Checker GitHub Workflow to be executed
+            rules:
+              - type: required
+                message: Kernel Checker GitHub Workflow ID is required
+
+      labels:
+        type: string
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+          ref: Method.get_labels
+
+      application:
+        type: string
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+          ref: Settings.WAAS_APPLICATION_SOURCE
+
+      externalId:
+        type: string
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+          ref: WorkflowSpec.workflowId
+
+      changeSpec:
+        type: string
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+          ref: Method.get_change_spec
+
+      compute.containment:
+        type: string
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+            defaultValue: Qualnet
+
+      compute.provider:
+        type: string
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+            defaultValue: Qualcomm
+
+      compute.architecture:
+        type: string
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            hidden: true
+            defaultValue: AMD64
+
+      compute.os:
+        type: string
+        coral.actions/metadata:
+          ui-annotations:
+            type: Text
+            label: Operating System
+            required: false
+            defaultValue: Ubuntu22.04.2
+
+jobs:
+  invoke-workflows:
+    container:
+      coral.actions/container:
+        images:
+          - image: 019415958841.dkr.ecr.us-west-2.amazonaws.com/kernel/gh-utilities:20250619.2
+            name: gh-utilities
+            entry-point: ["/bin/bash", "-c"]
+            init: false
+            essential: true
+            primary: true
+            env:
+              PATH: /bin/gh-utils:/usr/local/bin:/usr/bin:/bin
+
+    steps:
+      - name: email-checker
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.email.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+      - name: pre-merge
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.premerge.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+      - name: kernel-checker
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.kernel.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+    coral.actions/secrets:
+      labels:
+        - name: GithubToken
+          value: kernel-config

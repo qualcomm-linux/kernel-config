@@ -1,0 +1,56 @@
+name: Workflow Status
+description: 'Posts status to GitHub API with correct state and workflow URL'
+inputs:
+  sha:
+    description: 'The commit SHA to associate with the status'
+    required: true
+  repo:
+    description: 'The repository to post the status to'
+    required: true
+  check_name:
+    description: 'The name of the check'
+    required: true
+  action_mode:
+    description: 'Choose from start, success, or failure'
+    required: true
+  GH_TOKEN:
+    description: PAT
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate workflow URL and post on PR
+      if: ${{ inputs.action_mode == 'start' }}
+      id: get-url
+      shell: bash
+      run: |
+        sha="${{ inputs.sha }}"
+        check_name="${{ inputs.check_name }}"
+        repo=${{ inputs.repo }}
+
+        workflow_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+        curl -X POST \
+          -H "Authorization: token ${{ inputs.GH_TOKEN }}" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/repos/$repo/statuses/$sha \
+          -d "{\"state\":\"pending\",\"context\":\"$check_name\",\"description\":\"Workflow started\",\"target_url\":\"$workflow_url\"}"
+
+    - name: Post final status (success/failure)
+      if: ${{ inputs.action_mode != 'start' }}
+      shell: bash
+      run: |
+        sha="${{ inputs.sha }}"
+        check_name="${{ inputs.check_name }}"
+        repo=${{ inputs.repo }}
+
+        workflow_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        state="${{ inputs.action_mode == 'success' && 'success' || 'failure' }}"
+        desc="${{ inputs.action_mode == 'success' && 'Workflow succeeded' || 'Workflow failed' }}"
+
+        curl -X POST \
+          -H "Authorization: token ${{ inputs.GH_TOKEN }}" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/repos/$repo/statuses/$sha \
+          -d "{\"state\":\"$state\",\"context\":\"$check_name\",\"description\":\"$desc\",\"target_url\":\"$workflow_url\"}"

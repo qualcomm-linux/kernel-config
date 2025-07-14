@@ -11,6 +11,15 @@ on:
         description: Build matrix for multi target builds
         type: string
         required: true
+      pr_number:
+        description: PR number
+        type: string
+        required: false
+      branch:
+        description: Branch name
+        type: string
+        required: false
+      
 
 jobs:
   build:
@@ -27,8 +36,8 @@ jobs:
         id: sync
         uses: qualcomm-linux/kernel-config/.github/actions/sync@main
         with:
-          base_branch: ${{ github.base_ref }}
-          pr_number: ${{ github.event.pull_request.number }}
+          base_branch: ${{ inputs.branch }}
+          pr_number: ${{ inputs.pr_number}}
 
       - name: Pull docker image
         uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
