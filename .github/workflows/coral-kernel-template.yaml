@@ -47,7 +47,7 @@ on:
 
       workflow.email.id:
         type: number
-        required: true
+        required: false
         coral.actions/metadata:
           ui-annotations:
             type: Number
@@ -59,7 +59,7 @@ on:
 
       workflow.premerge.id:
         type: number
-        required: true
+        required: false
         coral.actions/metadata:
           ui-annotations:
             type: Number
@@ -71,7 +71,7 @@ on:
 
       workflow.kernel.id:
         type: number
-        required: true
+        required: false
         coral.actions/metadata:
           ui-annotations:
             type: Number
@@ -158,6 +158,7 @@ jobs:
 
     steps:
       - name: email-checker
+        if: ${{ inputs.workflow.email.id != '' }}
         run: |
           printenv
           uuid=$(openssl rand -hex 16)
@@ -175,6 +176,7 @@ jobs:
         coral.actions/expected-exit-codes: [0]
 
       - name: pre-merge
+        if: ${{ inputs.workflow.premerge.id != '' }}
         run: |
           printenv
           uuid=$(openssl rand -hex 16)
@@ -192,6 +194,7 @@ jobs:
         coral.actions/expected-exit-codes: [0]
 
       - name: kernel-checker
+        if: ${{ inputs.workflow.kernel.id != '' }}
         run: |
           printenv
           uuid=$(openssl rand -hex 16)
