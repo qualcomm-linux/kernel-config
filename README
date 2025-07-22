@@ -4,6 +4,6 @@ merge the various git topic branches and create a new integration branch
 
 Please send patches to update the qcom-next.conf file as per your team
 needs.
-
+ 
 There is also a ci.conf.sample file if you want to create your own
 configuration file for local integration testing.
