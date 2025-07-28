@@ -101,10 +101,10 @@ jobs:
             STATE=$(echo "$state" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
             echo "Current status: $STATE"
             CURRENT_TIME=$(date +%s)
-            ELAPSED_TIME=$(( (CURRENT_TIME - START_TIME) / 3600 ))
+            ELAPSED_TIME=$(((CURRENT_TIME - START_TIME)/3600))
             if [ $ELAPSED_TIME -ge 2 ]; then
-                 echo "Timeout: 2 hours elapsed.Lava job failed."
-                 summary=":x: Lava job failed."
+                 echo "Timeout: 2 hours exceeded."
+                 summary=":x: Lava job exceeded time limit."
                  echo "summary=$summary" >> $GITHUB_OUTPUT
                  exit 1
             fi
