@@ -95,10 +95,19 @@ jobs:
         id: check_job
         run: |
           STATE=""
+          START_TIME=$(date +%s)
           while [ "$STATE" != "Finished" ]; do
             state=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" | grep state)
             STATE=$(echo "$state" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
             echo "Current status: $STATE"
+            CURRENT_TIME=$(date +%s)
+            ELAPSED_TIME=$(((CURRENT_TIME - START_TIME)/3600))
+            if [ $ELAPSED_TIME -ge 2 ]; then
+                 echo "Timeout: 2 hours exceeded."
+                 summary=":x: Lava job exceeded time limit."
+                 echo "summary=$summary" >> $GITHUB_OUTPUT
+                 exit 1
+            fi
             sleep 30
           done
           health=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" | grep Health)
