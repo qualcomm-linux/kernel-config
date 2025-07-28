@@ -101,8 +101,7 @@ jobs:
             echo "Current status: $STATE"
             sleep 30
           done
-          health=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" | grep Health)
-          HEALTH=$(echo "$health" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
+          HEALTH=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production results $JOB_ID" | grep fail || echo "Complete")
           if [[ "$HEALTH" == "Complete" ]]; then
             echo "Lava job passed."
             summary=":heavy_check_mark: Lava job passed."
