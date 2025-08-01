@@ -6,7 +6,6 @@ on:
         description: Docker image
         type: string
         required: true
-
       build_matrix:
         description: Build matrix for multi target builds
         type: string
@@ -19,7 +18,10 @@ on:
         description: Branch name
         type: string
         required: false
-      
+      bootbins:
+        description: Boot bins for Flat META
+        type: string
+        required: true
 
 jobs:
   build:
@@ -51,6 +53,15 @@ jobs:
           docker_image: ${{ inputs.docker_image }}
           workspace_path: ${{ steps.sync.outputs.workspace_path }}
 
+      - name: Generate flat build
+        id: generate_flat_build
+        uses: qualcomm-linux/kernel-config/.github/actions/flat_meta_generation@main
+        with:
+          docker_image: ${{ inputs.docker_image }}
+          bootbins: ${{ inputs.bootbins }}
+          workspace_path: ${{ steps.sync.outputs.workspace_path }}
+          s3_bucket: qli-prd-kernel-gh-artifacts
+
       - name: Create file list for artifacts upload
         run: |
           workspace=${{ steps.sync.outputs.workspace_path }}
@@ -66,6 +77,15 @@ jobs:
           machines='${{ inputs.build_matrix }}'
           for machine in $(echo "$machines" | jq -r '.[].machine'); do
             echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}.dtb" >> $workspace/../artifacts/file_list.txt
+          done
+
+          # Loop through all bootbins and add flat meta to the list
+          bootbins='${{ inputs.bootbins }}'
+          for row in $(echo "$bootbins" | jq -c '.[]'); do
+            buildid=$(echo "$row" | jq -r '.buildid')
+            echo "BuildId : $buildid"
+            platform=$(echo "$buildid" | cut -d '.' -f1)
+            echo "$workspace/"$platform"_bootbinaries.tar.gz" >> $workspace/../artifacts/file_list.txt
           done
 
       - name: Upload artifacts

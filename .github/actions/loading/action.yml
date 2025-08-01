@@ -11,6 +11,10 @@ outputs:
     description: full matrix containing lava devails
     value: ${{ steps.set-matrix.outputs.full_matrix }}
 
+  bootbins:
+    description: Boot Bins for targets to generate Flat Build
+    value: ${{ steps.set-matrix.outputs.bootbins }}
+
 runs:
   using: "composite"
   steps:
@@ -22,13 +26,20 @@ runs:
           const fs = require('fs');
           const path = require('path');
           const filePath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'MACHINES.json');
+          const binsFilePath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'bootbins.json')
           let file;
+          let binsFile;
           try {
+            if (!fs.existsSync(binsFilePath)) {
+              core.setFailed(`bootbins.json not found at ${binsFilePath}`);
+              return;
+            }
             if (!fs.existsSync(filePath)) {
               core.setFailed(`MACHINES.json not found at ${filePath}`);
               return;
             }
             file = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            binsFile = JSON.parse(fs.readFileSync(binsFilePath, 'utf-8'));
           } catch (err) {
             core.setFailed(`Failed to load or parse MACHINES.json: ${err.message}`);
             return;
@@ -46,3 +57,12 @@ runs:
           }));
           core.setOutput('full_matrix', JSON.stringify(complete_matrix));
           console.log(complete_matrix);
+          
+          // Boot bins for FlatBuild
+          const bins_matrix = Object.entries(binsFile).map(([target, [buildid, firmwareid]]) => ({
+            target,
+            buildid,
+            firmwareid
+          }));
+          core.setOutput('bootbins', JSON.stringify(bins_matrix));
+          console.log(bins_matrix);

@@ -21,6 +21,10 @@ inputs:
     description: Mode of operation (upload/download)
     required: true
     default: single-upload
+  upload_location:
+    description: Upload location
+    required: false
+    default: ${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.run_id }}-${{ github.run_attempt }}/
 
 outputs:
   presigned_url:
@@ -34,7 +38,7 @@ runs:
       id: sync-data
       shell: bash
       env:
-        UPLOAD_LOCATION: ${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.workflow }}/${{ github.head_ref != '' && github.head_ref || github.run_id }}/
+        UPLOAD_LOCATION: ${{ inputs.upload_location }}
       run: |
         echo "::group::$(printf '__________ %-100s' 'Process' | tr ' ' _)"
         case "${{ inputs.mode }}" in
