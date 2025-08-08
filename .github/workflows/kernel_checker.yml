@@ -79,7 +79,7 @@ jobs:
 
     strategy:
       matrix:
-        check: [check-uapi-headers, sparse-check, checkpatch,
+        check: [check-patch-compliance, check-uapi-headers, sparse-check, checkpatch,
           dt-binding-check, dtb-check]
       fail-fast: false
   
