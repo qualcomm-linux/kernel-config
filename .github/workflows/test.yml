@@ -110,12 +110,21 @@ jobs:
             fi
             sleep 30
           done
-          HEALTH=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production results $JOB_ID" | grep fail || echo "Complete")
+          health=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" | grep Health)
+          HEALTH=$(echo "$health" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
           if [[ "$HEALTH" == "Complete" ]]; then
-            echo "Lava job passed."
-            summary=":heavy_check_mark: Lava job passed."
-            echo "summary=$summary" >> $GITHUB_OUTPUT
-            exit 0
+            TEST_RESULTS=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production results $JOB_ID" | grep fail || echo "Pass")
+            if [[ "$TEST_RESULTS" == "Pass" ]]; then
+               echo "Lava job passed."
+               summary=":heavy_check_mark: Lava job passed."
+               echo "summary=$summary" >> $GITHUB_OUTPUT
+               exit 0
+            else
+               echo "Lava job failed."
+               summary=":x: Lava job failed."
+               echo "summary=$summary" >> $GITHUB_OUTPUT
+               exit 1
+            fi
           else
             echo "Lava job failed."
             summary=":x: Lava job failed."
