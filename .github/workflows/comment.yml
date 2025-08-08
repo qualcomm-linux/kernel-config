@@ -1,0 +1,48 @@
+name: _comment 
+description: Adds job status for tests on PR 
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: Pull Request Number 
+        type: string
+        required: true
+
+      sha:
+        description: Head SHA for PR  # Expecting full SHA 
+        type: string
+        required: true
+
+      repo:
+        description: Target Repository  # Assuming format "owner/repo"
+        type: string
+        required: true
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Job Info Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Aggregate Job Info results
+        run: |
+          sha=$(echo "${{ inputs.sha }}" | cut -c1-7)
+          commit_url="https://github.com/${{ inputs.repo }}/commit/${{ inputs.sha }}"
+          echo "# Test jobs on [$sha]($commit_url)" > job_info_summary.md
+          cat artifacts/*/*.md >> job_info_summary.md 
+
+      - name: Add Comment on PR
+        run: |
+          msg=$(cat job_info_summary.md)
+          json=$(jq -n --arg msg "$msg" '{body: $msg}')
+          curl -L \
+          -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.PAT }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://api.github.com/repos/${{ inputs.repo }}/issues/${{ inputs.pr }}/comments \
+          -d "$json" 
