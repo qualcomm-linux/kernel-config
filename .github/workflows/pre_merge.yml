@@ -46,7 +46,8 @@ jobs:
       build_matrix: ${{ needs.loading.outputs.build_matrix }}
       pr_number: ${{ inputs.pr }}
       branch: ${{ inputs.ref }}
-
+      bootbins: ${{ needs.loading.outputs.bootbins }}
+  
   test:
     needs: [init-status, loading, build]
     uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
