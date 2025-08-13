@@ -27,6 +27,10 @@ on:
         required: false
 
 jobs:
+  loading:
+    uses: ./.github/workflows/loading.yml
+    secrets: inherit
+
   init-status:
     name: Initialize Status
     runs-on: ubuntu-latest
@@ -186,18 +190,54 @@ jobs:
           mode: download
           download_file: kernel/ubuntu-firmware/linux-firmware-xelite_1.0-1+noble_arm64.deb
 
+      - name: Download firmware debian package for KLM Targets
+        uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+        with:
+          s3_bucket: qli-prd-kernel-gh-artifacts
+          mode: download
+          download_file: kernel/ubuntu-firmware/linux-firmware_20250317.git1d4c88ee-0ubuntu1.3_arm64.deb
+
       - name: Build Ubuntu rootfs
         run: |
+          mkdir Hamoa
+          cd Hamoa
           docker run -i \
-          --privileged --rm -v /dev:/dev -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+          --privileged --rm -v /dev:/dev -v $PWD/..:/workspace --workdir="/workspace/Hamoa" kmake-image:ubuntu-noble-arm64 \
           -c '
-            ./rootfs/scripts/build-ubuntu-rootfs.sh kernel/${{ steps.get_kernel_version.outputs.kernel_version }} linux-firmware-xelite_1.0-1+noble_arm64.deb
+            ../rootfs/scripts/build-ubuntu-rootfs.sh ../kernel/${{ steps.get_kernel_version.outputs.kernel_version }} ../linux-firmware-xelite_1.0-1+noble_arm64.deb
           '
+          cd ..
+
+          mkdir KLM
+          cd KLM
+          docker run -i \
+          --privileged --rm -v /dev:/dev -v $PWD/..:/workspace --workdir="/workspace/KLM" kmake-image:ubuntu-noble-arm64 \
+          -c '
+            ../rootfs/scripts/build-ubuntu-rootfs.sh ../kernel/${{ steps.get_kernel_version.outputs.kernel_version }} ../linux-firmware_20250317.git1d4c88ee-0ubuntu1.3_arm64.deb KLM
+          '
+          cd ..
+
+      - name: Generate DTB.bin for KLM Targets
+        run: |
+          set -x
+          touch ${{ github.workspace }}/file_list.txt
+          cd KLM
+          bootbins='${{ needs.loading.outputs.bootbins }}'
+          echo "$bootbins" | jq -c '.[]' | while read -r row; do
+            target=$(echo "$row" | jq -r '.target')
+            echo $target
+            docker run -i \
+              --privileged --rm -v /dev:/dev -v $PWD/..:/workspace --workdir="/workspace/KLM" kmake-image:ubuntu-noble-arm64 \
+              -c '
+                generate_boot_bins.sh dtb --input ../kernel/qcom-next/arch/arm64/boot/dts/qcom/${target}.dtb --output ${target}_dtb
+              '
+          done
 
       - name: Create file list for artifacts upload
         run: |
-          touch ${{ github.workspace }}/file_list.txt
-          echo "${{ github.workspace }}/ubuntu.img" >> ${{ github.workspace }}/file_list.txt
+          echo "${{ github.workspace }}/efiesp.bin" >> ${{ github.workspace }}/file_list.txt
+          echo "${{ github.workspace }}/Hamoa/ubuntu.img" >> ${{ github.workspace }}/file_list.txt
+          echo "${{ github.workspace }}/KLM/ubuntu.img" >> ${{ github.workspace }}/file_list.txt
           echo "${{ github.workspace }}/kernel/${{ steps.get_kernel_version.outputs.kernel_version }}" >> ${{ github.workspace }}/file_list.txt
 
       - name: Upload artifacts to S3
