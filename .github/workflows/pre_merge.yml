@@ -47,7 +47,20 @@ jobs:
       pr_number: ${{ inputs.pr }}
       branch: ${{ inputs.ref }}
       bootbins: ${{ needs.loading.outputs.bootbins }}
-  
+
+  check_run:
+    runs-on: ubuntu-latest
+    needs: [init-status, loading, build]
+    steps:
+      - name: Post check run
+        uses: qualcomm-linux-stg/kernel-config-test/.github/actions/check_run@main
+        with:
+          sha: ${{ inputs.sha }}
+          repo: ${{ inputs.repo }}
+          s3_location: ${{ needs.build.outputs.s3_location }}
+          APPID: ${{ secrets.APPID }}
+          PVK: ${{ secrets.PVK }}
+
   test:
     needs: [init-status, loading, build]
     uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main

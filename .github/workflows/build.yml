@@ -22,12 +22,18 @@ on:
         description: Boot bins for Flat META
         type: string
         required: true
+    outputs:
+      s3_location:
+        description: "S3 location of uploaded artifacts"
+        value: ${{ jobs.build.outputs.s3_location }}
 
 jobs:
   build:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    outputs:
+      s3_location: ${{ steps.upload-artifacts.outputs.s3_location }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -89,6 +95,7 @@ jobs:
           done
 
       - name: Upload artifacts
+        id: upload-artifacts
         uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
         with:
           s3_bucket: qli-prd-kernel-gh-artifacts

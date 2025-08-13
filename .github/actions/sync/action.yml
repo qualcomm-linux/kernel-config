@@ -30,6 +30,7 @@ runs:
       with:
         fetch-depth: 0
         repository: qualcomm-linux/kernel
+        ref: ${{ inputs.base_branch }}
 
     - name: Configure git
       shell: bash

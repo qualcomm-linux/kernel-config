@@ -30,6 +30,9 @@ outputs:
   presigned_url:
     description: Pre-signed URL for the uploaded file
     value: ${{ steps.sync-data.outputs.presigned_url }}
+  s3_location:
+    description: Upload location
+    value: ${{ inputs.upload_location }}
 
 runs:
   using: "composite"
