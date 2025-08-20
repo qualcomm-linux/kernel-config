@@ -1,230 +1,62 @@
 ---
-name: ubuntu_package_generation
-run-name: Generate Ubuntu Packages
+name: _ubuntu
+description: Reusable workflow for ubuntu package generation
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      qcom-build-utils-pr-number:
-        description: PR number to take the latest changes from (keep to use `ubuntu-noble-arm64` branch)
-        required: false
-        type: string
-      pr:
-        description: Pull request number
-        type: string
-        required: false
-      sha:
-        description: Head sha of the PR
-        type: string
-        required: false
-      ref:
-        description: Target branch
-        type: string
-        required: false
       repo:
-        description: Target repository
-        type: string
+        description: 'Repo Name'
         required: false
+        type: string
+      ref:
+        description: 'Branch or tag name'
+        required: false
+        type: string
+      build_utils_ref:
+        description: 'Reference for qcom-build-utils (latest commit sha)'
+        required: false
+        type: string
+        default: 'latest'
+      pr:
+        description: 'Pull Request Number'
+        required: false
+        type: string
+        default: ''
+      build_matrix:
+        description: 'Build matrix for parallel builds'
+        required: true
+        type: string
 
 jobs:
-  init-status:
-    name: Initialize Status
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set Status
-        uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
-        with:
-          sha: ${{ github.event.inputs.sha || github.sha }}
-          action_mode: start
-          check_name: "Ubuntu Package Generation"
-          repo: ${{ github.event.inputs.repo || github.repository }}
-          GH_TOKEN: ${{ secrets.PAT }}
-
-  init:
-    name: Initialize Workflow
-    needs: init-status
-    runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ steps.get_sha.outputs.commit_sha }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          repository: qualcomm-linux/qcom-build-utils
-          token: ${{ secrets.PAT }}
-
-      - name: Get commit sha
-        id: get_sha
-        run: |
-          echo "${{ secrets.PAT }}" | gh auth login --with-token
-          if [ -n "${{ github.event.inputs.qcom-build-utils-pr-number }}" ]; then
-           # fetch latest commit hash from the PR branch
-            commit_sha=$(gh pr view ${{ github.event.inputs.qcom-build-utils-pr-number }} --json commits --jq '.commits[-1].oid')
-            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
-          else
-            # use the latest commit hash from the latest branch
-            commit_sha=$(gh api repos/qualcomm-linux/qcom-build-utils/branches/latest --jq '.commit.sha')
-            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
-          fi
-          echo "commit_sha=${commit_sha}"
-
-      - name: Update Summary
-        run: |
-          echo "## Ubuntu Package Generation" >> $GITHUB_STEP_SUMMARY
-          echo "- Pull Request Number: \`${{ github.event.inputs.pr || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Head Commit SHA: \`${{ inputs.sha || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Target Branch: \`${{ github.event.inputs.ref || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Target Repository: \`${{ github.event.inputs.repo || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-
   generate_debians:
-    name: Generate Debian Packages
-    needs: [init-status, init]
+    name: Build
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [self-hosted, kernel-prd-u2404-arm64-xlrg-od-ephem]
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu_matrix: ${{ fromJson(inputs.build_matrix) }}
     steps:
-      - name: Checkout qcom-build-utils repository
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Build Ubuntu packages
+        id: build
+        uses: qualcomm-linux/kernel-config/.github/actions/build_ubuntu@main
         with:
-          repository: qualcomm-linux/qcom-build-utils
-          ref: ${{ needs.init.outputs.commit_sha }}
+          repo: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+          build_utils_ref: ${{ inputs.build_utils_ref }}
+          pr: ${{ inputs.pr }}
+          bootbin: ${{ matrix.ubuntu_matrix.bootbin }}
+          content: ${{ matrix.ubuntu_matrix.content }}
+          machine: ${{ matrix.ubuntu_matrix.machine }}
+          target: ${{ matrix.ubuntu_matrix.target }}
+          efi: ${{ matrix.ubuntu_matrix.efi }}
+          firmware: ${{ matrix.ubuntu_matrix.firmware }}
+        env:
           token: ${{ secrets.PAT }}
-
-      - name: Pull docker image
-        run: |
-          docker pull artifacts.codelinaro.org/clo-420-qli-registry/kmake-image-ubuntu-noble-arm64:ver.1.0
-          docker tag artifacts.codelinaro.org/clo-420-qli-registry/kmake-image-ubuntu-noble-arm64:ver.1.0 kmake-image:ubuntu-noble-arm64
-
-      - name: Setup git config
-        run: |
-          git config --global user.name "QLI CI Bot"
-          git config --global user.email "qualcomm-linux@qualcomm.com"
-
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
-
-      - name: Sync kernel codebase
-        id: sync
-        run: |
-          cd kernel && export BUILD_TOP=`pwd`
-          if [ -z "${{ github.event.inputs.repo }}" ]; then
-            echo "No repository specified, using default: qualcomm-linux/kernel"
-            export REPO="qualcomm-linux/kernel"
-          else
-            export REPO="${{ github.event.inputs.repo }}"
-          fi
-          if [ -z "${{ github.event.inputs.ref }}" ]; then
-            echo "No branch specified, using default: qcom-next"
-            export BRANCH="qcom-next"
-          else
-            export BRANCH="${{ github.event.inputs.ref }}"
-          fi
-          echo "Syncing ${REPO} branch ${BRANCH}"
-          git clone https://${{ secrets.PAT }}@github.com/${REPO}.git --single-branch -b ${BRANCH} --depth=1 $BUILD_TOP/qcom-next
-          if [ -z "${{ github.event.inputs.pr }}" ]; then
-            echo "No PR number specified, skipping merge."
-            echo "build_top=$BUILD_TOP" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          echo "Merging PR #${{ github.event.inputs.pr }}"
-          cd $BUILD_TOP/qcom-next
-          git fetch https://${{ secrets.PAT }}@github.com/${REPO}.git pull/${{ github.event.inputs.pr }}/head:pr-${{ github.event.inputs.pr }}
-          git merge pr-${{ github.event.inputs.pr }} --no-commit || echo "Merge already applied or fast-forwarded"
-          if ! git diff --cached --quiet; then
-            git commit -m "Merged PR #${{ github.event.inputs.pr }}"
-          else
-            echo "Nothing to commit. PR may already be merged or fast-forwarded."
-          fi
-          echo "build_top=$BUILD_TOP" >> "$GITHUB_ENV"
-
-      - name: Add Kernel SQUASHFS configs required for Ubuntu
-        run: |
-          ./kernel/scripts/enable_squashfs_configs.sh ${{ env.build_top }}/qcom-next/
-
-      - name: Run build script
-        run: |
-          docker run -i \
-          --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
-          -c '
-            cd kernel
-            export BUILD_TOP=${{ env.build_top }}
-            ./scripts/build_kernel.sh
-          '
-
-      - name: Generate Linux Kernel Debian Package
-        run: |
-          docker run -i \
-          --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
-          -c '
-            cd kernel
-            # Run build-kernel-deb.sh and pass as argument the directory where kernel build artifacts were deployed (out/)
-            ./scripts/build-kernel-deb.sh out/
-          '
-
-      - name: Get built kernel version
-        id: get_kernel_version
-        run: |
-          cd kernel
-          kernel_version=$(ls *.deb)
-          echo "kernel_version=${kernel_version}" >> "$GITHUB_OUTPUT"
-
-      - name: Download EFI System Partition Image
-        uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
-        with:
-          s3_bucket: qli-prd-kernel-gh-artifacts
-          mode: download
-          download_file: qualcomm-linux/kernel/ubuntu-static-efi/efiesp.bin
-
-      - name: Download firmware debian package for X Elite CRD
-        uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
-        with:
-          s3_bucket: qli-prd-kernel-gh-artifacts
-          mode: download
-          download_file: kernel/ubuntu-firmware/linux-firmware-xelite_1.0-1+noble_arm64.deb
-
-      - name: Build Ubuntu rootfs
-        run: |
-          docker run -i \
-          --privileged --rm -v /dev:/dev -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
-          -c '
-            ./rootfs/scripts/build-ubuntu-rootfs.sh kernel/${{ steps.get_kernel_version.outputs.kernel_version }} linux-firmware-xelite_1.0-1+noble_arm64.deb
-          '
-
-      - name: Create file list for artifacts upload
-        run: |
-          touch ${{ github.workspace }}/file_list.txt
-          echo "${{ github.workspace }}/ubuntu.img" >> ${{ github.workspace }}/file_list.txt
-          echo "${{ github.workspace }}/kernel/${{ steps.get_kernel_version.outputs.kernel_version }}" >> ${{ github.workspace }}/file_list.txt
-
-      - name: Upload artifacts to S3
-        uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
-        with:
-          s3_bucket: qli-prd-kernel-gh-artifacts
-          local_file: ${{ github.workspace }}/file_list.txt
-          mode: multi-upload
-
-      - name: Cleanup
-        if: always()
-        run: |
-          docker run -i \
-          --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
-          -c 'rm -rf ${{ github.workspace }}/*'
-
-  final-status:
-    name: Finalize Status
-    if: always()
-    runs-on: ubuntu-latest
-    needs: generate_debians
-    steps:
-      - name: Set final status
-        uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
-        with:
-          sha: ${{ github.event.inputs.sha || github.sha }}
-          action_mode: ${{ needs.generate_debians.result }}
-          check_name: "Ubuntu Package Generation"
-          repo: ${{ github.event.inputs.repo || github.repository }}
-          GH_TOKEN: ${{ secrets.PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

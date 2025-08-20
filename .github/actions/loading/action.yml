@@ -15,6 +15,10 @@ outputs:
     description: Boot Bins for targets to generate Flat Build
     value: ${{ steps.set-matrix.outputs.bootbins }}
 
+  ubuntu_matrix:
+    description: Ubuntu matrix for generating packages
+    value: ${{ steps.ubuntu-matrix.outputs.ubuntu_matrix }}
+
 runs:
   using: "composite"
   steps:
@@ -25,44 +29,54 @@ runs:
         script: |
           const fs = require('fs');
           const path = require('path');
-          const filePath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'MACHINES.json');
-          const binsFilePath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'bootbins.json')
-          let file;
-          let binsFile;
+          const targetsPath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'MACHINES.json');
+          let targets;
           try {
-            if (!fs.existsSync(binsFilePath)) {
-              core.setFailed(`bootbins.json not found at ${binsFilePath}`);
+            if (!fs.existsSync(targetsPath)) {
+              core.setFailed(`MACHINES.json not found at ${targetsPath}`);
               return;
             }
-            if (!fs.existsSync(filePath)) {
-              core.setFailed(`MACHINES.json not found at ${filePath}`);
-              return;
-            }
-            file = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-            binsFile = JSON.parse(fs.readFileSync(binsFilePath, 'utf-8'));
+            targets = JSON.parse(fs.readFileSync(targetsPath, 'utf-8'));
           } catch (err) {
             core.setFailed(`Failed to load or parse MACHINES.json: ${err.message}`);
             return;
           }
-          // Slim matrix for better job visibility
-          const slim_matrix = Object.entries(file).map(([machine, [firmware]]) => ({ machine, firmware }));
-          core.setOutput('build_matrix', JSON.stringify(slim_matrix));
-          console.log(slim_matrix);
+          // Build matrix: machine, firmware
+          const build_matrix = Object.values(targets).map(({ machine, firmware }) => ({ machine, firmware }));
+          core.setOutput('build_matrix', JSON.stringify(build_matrix));
+          console.log("Build Matrix:", build_matrix);
 
-          // Full matrix to pass to test jobs
-          const complete_matrix = Object.entries(file).map(([machine, [firmware, lavaname]]) => ({
-            machine,
-            firmware,
-            lavaname
-          }));
-          core.setOutput('full_matrix', JSON.stringify(complete_matrix));
-          console.log(complete_matrix);
-          
-          // Boot bins for FlatBuild
-          const bins_matrix = Object.entries(binsFile).map(([target, [buildid, firmwareid]]) => ({
-            target,
-            buildid,
-            firmwareid
-          }));
-          core.setOutput('bootbins', JSON.stringify(bins_matrix));
-          console.log(bins_matrix);
+          // Full matrix: machine, firmware, lavaname
+          const full_matrix = Object.values(targets).map(({ machine, firmware, lavaname }) => ({ machine, firmware, lavaname }));
+          core.setOutput('full_matrix', JSON.stringify(full_matrix));
+          console.log("Full Matrix:", full_matrix);
+
+          // Bootbins: target, buildid, firmwareid
+          const bootbins = Object.values(targets).map(({ target, buildid, firmwareid }) => ({ target, buildid, firmwareid }));
+          core.setOutput('bootbins', JSON.stringify(bootbins));
+          console.log("Boot Bins:", bootbins);
+
+    - name: Set Ubuntu Config Matrix
+      id: ubuntu-matrix
+      if: ${{ github.workflow == 'pre_merge_ubuntu' }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          const ubuntuConfigPath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'UBUNTU_CONFIG.json');
+          let ubuntuConfig;
+          try {
+            if (!fs.existsSync(ubuntuConfigPath)) {
+              core.setFailed(`UBUNTU_CONFIG.json not found at ${ubuntuConfigPath}`);
+              return;
+            }
+            ubuntuConfig = JSON.parse(fs.readFileSync(ubuntuConfigPath, 'utf-8'));
+          } catch (err) {
+            core.setFailed(`Failed to load or parse UBUNTU_CONFIG.json: ${err.message}`);
+            return;
+          }
+          // Build matrix: os, kernel, firmware
+          const ubuntu_matrix = Object.values(ubuntuConfig).map(obj => Object.fromEntries(Object.entries(obj)));
+          core.setOutput('ubuntu_matrix', JSON.stringify(ubuntu_matrix));
+          console.log("Ubuntu Matrix:", ubuntu_matrix); 

@@ -1,0 +1,18 @@
+{
+    "hamoa": {
+        "machine": "hamoa",
+        "target": "hamoa",
+        "firmware": "kernel/ubuntu-firmware/linux-firmware-xelite_1.0-1+noble_arm64.deb",
+        "efi": "qualcomm-linux/kernel/ubuntu-static-efi/efiesp.bin",
+        "bootbin": "",
+        "content": ""
+    },
+    "qcs6490-rb3gen2": {
+        "machine": "qcs6490-rb3gen2",
+        "target": "KLM",
+        "firmware": "kernel/ubuntu-firmware/linux-firmware_20250317.git1d4c88ee-0ubuntu1.3_arm64.deb",
+        "efi": "qualcomm-linux/kernel/ubuntu-static-efi/efiesp.bin",
+        "bootbin": "QCM6490.LE.1.0-00376-STD.PROD-1/QCM6490_bootbinaries.zip",
+        "content": "QCM6490.LE.1.0-00376-STD.PROD-1/contents.zip"
+    }
+}
