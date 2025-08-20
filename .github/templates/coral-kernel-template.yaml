@@ -81,6 +81,18 @@ on:
               - type: required
                 message: Kernel Checker GitHub Workflow ID is required
 
+      workflow.ubuntu.id:
+        type: number
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: pre_merge_ubuntu Workflow ID
+            description: ID of the Ubuntu Package Generation Workflow to be executed
+            rules:
+              - type: required
+                message: Ubuntu package generation Workflow ID
+
       labels:
         type: string
         coral.actions/metadata:
