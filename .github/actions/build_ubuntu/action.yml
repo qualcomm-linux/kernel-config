@@ -1,0 +1,331 @@
+---
+name: Build Ubuntu Packages
+description: Build Ubuntu packages for different targets
+
+inputs:
+  repo:
+    description: Repository to sync kernel codebase from
+    required: false
+    default: qualcomm-linux/kernel
+  ref:
+    description: Branch or tag to sync from
+    required: false
+    default: qcom-next
+  pr:
+    description: Pull request number to merge into the branch
+    required: false
+    default: ''
+  build_utils_ref:
+    description: Reference for qcom-build-utils (latest commit sha)
+    required: false
+    default: 'latest'
+  bootbin:
+    description: Bootbin file to use for the build
+    required: true
+  content:
+    description: Contents file to use for the build
+    required: true
+  machine:
+    description: Machine to build the kernel for
+    required: true
+  target:
+    description: Target for the build (e.g., KLM)
+    required: true
+  efi:
+    description: EFI file to use for the build
+    required: true
+  firmware:
+    description: Firmware file to use for the build
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout qcom-build-utils repository
+      uses: actions/checkout@v4
+      with:
+        repository: qualcomm-linux/qcom-build-utils
+        ref: ${{ inputs.build_utils_ref }}
+        token: ${{ env.token }}
+
+    - name: Pull Docker image for building Ubuntu packages
+      uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+      with:
+        image: kmake-image-ubuntu-noble-arm64:ver.1.0
+        tag: ubuntu-noble-arm64
+
+    - name: Setup git config and Logging
+      shell: bash
+      run: |
+        git config --global user.name "QLI CI Bot"
+        git config --global user.email "qualcomm-linux@qualcomm.com"
+        echo "LOGFILE=${{ github.workspace }}/build-logs.log" >> "$GITHUB_ENV"
+
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Sync kernel codebase
+      shell: bash
+      id: sync
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Sync' | tr ' ' _)"
+        cd kernel && export BUILD_TOP=`pwd`
+        if [ -z "${{ inputs.repo }}" ]; then
+          echo "No repository specified, using default: qualcomm-linux/kernel"
+          export REPO="qualcomm-linux/kernel"
+        else
+          export REPO="${{ inputs.repo }}"
+        fi
+        if [ -z "${{ inputs.ref }}" ]; then
+          echo "No branch specified, using default: qcom-next"
+          export BRANCH="qcom-next"
+        else
+          export BRANCH="${{ inputs.ref }}"
+        fi
+        echo "Syncing ${REPO} branch ${BRANCH}"
+        git clone https://${{ env.token }}@github.com/${REPO}.git --single-branch -b ${BRANCH} --depth=1 $BUILD_TOP/qcom-next
+        if [ -z "${{ inputs.pr }}" ]; then
+          echo "No PR number specified, skipping merge."
+          echo "build_top=$BUILD_TOP" >> "$GITHUB_ENV"
+          exit 0
+        fi
+        echo "Merging PR #${{ inputs.pr }}"
+        cd $BUILD_TOP/qcom-next
+        git fetch https://${{ env.token }}@github.com/${REPO}.git pull/${{ inputs.pr }}/head:pr-${{ inputs.pr }}
+        git merge pr-${{ inputs.pr }} --no-commit || echo "Merge already applied or fast-forwarded"
+        if ! git diff --cached --quiet; then
+          git commit -m "Merged PR #${{ inputs.pr }}"
+        else
+          echo "Nothing to commit. PR may already be merged or fast-forwarded."
+        fi
+        echo "build_top=$BUILD_TOP" >> "$GITHUB_ENV"
+        echo "::endgroup::"
+
+    - name: Add Kernel SQUASHFS configs required for Ubuntu
+      shell: bash
+      run: |
+        ./kernel/scripts/enable_squashfs_configs.sh ${{ env.build_top }}/qcom-next/
+
+    - name: Run build script
+      id: build
+      shell: bash
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Build' | tr ' ' _)"
+        echo "==>Building kernel for machine: ${{ inputs.machine }}"
+        echo "==>Logging to $LOGFILE"
+        echo "=== Kernel Build Log ===" >> "$LOGFILE"
+        docker run -i \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        -c '
+          cd kernel
+          export BUILD_TOP=${{ env.build_top }}
+          ./scripts/build_kernel.sh
+        ' >> "$LOGFILE" 2>&1
+        echo "==>Kernel build completed. Log saved to $LOGFILE"
+        echo -e "=== Kernel Build completed === \n\n" >> "$LOGFILE"
+        echo "::endgroup::"
+
+    - name: Generate Linux Kernel Debian Package
+      shell: bash
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Generate Kernel Debian Package' | tr ' ' _)"
+        docker run -i \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        -c '
+          cd kernel
+          # Run build-kernel-deb.sh and pass as argument the directory where kernel build artifacts were deployed (out/)
+          ./scripts/build-kernel-deb.sh out/
+        '
+        echo "::endgroup::"
+
+    - name: Get built kernel version
+      id: get_kernel_version
+      shell: bash
+      run: |
+        cd kernel
+        kernel_version=$(ls *.deb)
+        echo "kernel_version=${kernel_version}" >> "$GITHUB_OUTPUT"
+
+    - name: Download EFI System Partition Image
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: qli-prd-kernel-gh-artifacts
+        mode: download
+        download_file: ${{ inputs.efi }}
+
+    - name: Download firmware debian package
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: qli-prd-kernel-gh-artifacts
+        mode: download
+        download_file: ${{ inputs.firmware }}
+
+    - name: Build Ubuntu rootfs
+      id: build_rootfs
+      shell: bash
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Build Ubuntu Rootfs' | tr ' ' _)"
+        echo "==>Building Ubuntu rootfs for machine: ${{ inputs.machine }}"
+        echo "==>Logging to $LOGFILE"
+        echo "=== Ubuntu Rootfs Build Log ===" >> "$LOGFILE"
+        docker run -i \
+        --privileged --rm -v /dev:/dev -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        -c '
+          FIRMWARE="${{ inputs.firmware }}"
+          firmware=$(basename "$FIRMWARE")
+          ./rootfs/scripts/build-ubuntu-rootfs.sh kernel/${{ steps.get_kernel_version.outputs.kernel_version }} "$firmware" ${{ inputs.target }}
+        ' >> "$LOGFILE" 2>&1
+        echo "==>Ubuntu rootfs build completed. Log saved to $LOGFILE"
+        echo -e "=== Ubuntu Rootfs Build completed === \n\n" >> "$LOGFILE"
+        echo "::endgroup::"
+
+    - name: Generate dtb.bin
+      if: ${{ inputs.machine != 'hamoa' }}
+      shell: bash
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Generate dtb.bin' | tr ' ' _)"
+        docker run -i \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        -c "
+          sed -i 's/\r$//' /usr/bin/generate_boot_bins.sh
+          generate_boot_bins.sh dtb --input kernel/out/${{ inputs.machine }}.dtb --output images
+        "
+        echo "::endgroup::"
+
+    - name: Download contents.zip
+      if: ${{ inputs.machine != 'hamoa' }}
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: qli-stg-kernel-gh-artifacts
+        mode: download
+        download_file: ${{ inputs.content }}
+
+    - name: Download Bootbin Binaries
+      if: ${{ inputs.machine != 'hamoa' }}
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: qli-prd-kernel-gh-artifacts
+        mode: download
+        download_file: ${{ inputs.bootbin }}
+
+    - name: generate flat_meta
+      if: ${{ inputs.machine != 'hamoa' }}
+      id: generate_flat_meta
+      shell: bash
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Generate flat_meta' | tr ' ' _)"
+        set -eux -o pipefail
+        # CLone ptools repository
+        cd .. && git clone https://github.com/qualcomm-linux/qcom-ptool.git && cd -
+        bootbin_filename=$(ls *bootbinaries.zip)
+        unzip $bootbin_filename
+        bootbin_dirname="${bootbin_filename%.zip}"
+        echo "==>Generating flat_meta for machine: ${{ inputs.machine }}"
+        echo "==>Logging to $LOGFILE"
+        python3 ../qcom-ptool/ptool.py \
+          -x $bootbin_dirname/partition_ufs.xml \
+          -t $bootbin_dirname >> "$LOGFILE" 2>&1
+        echo "==>flat_meta generated. Log saved to $LOGFILE"
+        echo -e "=== flat_meta generated === \n\n" >> "$LOGFILE"
+        unzip contents.zip
+        if [ ! -d "contents" ]; then
+          echo "Contents directory not found, exiting..."
+          exit 1
+        fi
+        cp -f contents/* $bootbin_dirname/
+        cd $bootbin_dirname
+        rm -rf rawprogram{0..5}_*
+        echo "bootbin_dirname=$bootbin_dirname" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+    - name: Repack flat_meta with updated files
+      if: ${{ inputs.machine != 'hamoa' }}
+      shell: bash
+      env:
+        bootbin_dirname: ${{ steps.generate_flat_meta.outputs.bootbin_dirname }}
+      run: |
+        echo "::group::$(printf '__________ %-100s' 'Repack flat_meta' | tr ' ' _)"
+        set -eux -o pipefail
+        # check if dtb.bin exist in image directory, if exist copy it to the `bootbin_dirname` directory
+        if [ -f "images/dtb.bin" ]; then
+          cp -f images/dtb.bin $bootbin_dirname/
+        else
+          echo "dtb.bin not found, exiting..."
+          exit 1
+        fi
+        # copy the efi file to the `bootbin_dirname` directory with efi.bin name
+        if [ -f "efiesp.bin" ]; then
+          cp -f efiesp.bin $bootbin_dirname/efi.bin
+        fi
+        # copy the ubuntu.img to the `bootbin_dirname` directory with system.img name
+        if [ -f "ubuntu.img" ]; then
+          cp -f ubuntu.img $bootbin_dirname/system.img
+        fi
+        # create new flat_meta.tar.gz file
+        tar -czf flat_meta.tar.gz $bootbin_dirname/
+        # check if the flat_meta.tar.gz file is created, if not exit with error
+        if [ ! -f "flat_meta.tar.gz" ]; then
+          echo "flat_meta.tar.gz not found, exiting..."
+          exit 1
+        fi
+        # copy the new flat_meta.tar.gz file to the `out` directory with <machine>_flat_meta.tar.gz name
+        mkdir out
+        cp -f flat_meta.tar.gz out/${{ inputs.machine }}_flat_meta.tar.gz
+        echo "::endgroup::"
+
+    - name: Prepare file list for upload
+      id: process_files
+      shell: bash
+      run: |
+        touch file_list.txt
+        if [ "${{ inputs.machine }}" == "hamoa" ]; then
+          mkdir -p ${{ github.workspace }}/images
+          cp ${{ github.workspace }}/ubuntu.img ${{ github.workspace }}/images/
+          cp ${{ github.workspace }}/kernel/${{ steps.get_kernel_version.outputs.kernel_version }} ${{ github.workspace }}/images/
+          tar -czf ${{ inputs.machine }}_flat_meta.tar.gz images/
+          echo "${{ github.workspace }}/${{ inputs.machine }}_flat_meta.tar.gz" >> file_list.txt
+        else
+          echo "${{ github.workspace }}/out/${{ inputs.machine }}_flat_meta.tar.gz" >> file_list.txt
+        fi
+        echo "${{ github.workspace}}/build-logs.log" >> file_list.txt
+
+    - name: Upload artifacts to S3
+      if: steps.build.outcome == 'success' && steps.build_rootfs.outcome == 'success'
+      id: upload_artifacts
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: qli-prd-kernel-gh-artifacts
+        local_file: ${{ github.workspace }}/file_list.txt
+        mode: multi-upload
+      env:
+        machine: ${{ inputs.machine }}_
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        docker run -i \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        -c 'rm -rf ${{ github.workspace }}/*'
+
+    - name: Update Summary
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.upload_artifacts.outcome }}" == "success" ]; then
+          status="Success"
+          emoji=":heavy_check_mark:"
+        else
+          status="Failure"
+          emoji=":x:"
+        fi
+        echo "### Build completed successfully." >> $GITHUB_STEP_SUMMARY
+        echo "- Artifacts upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
+        echo "- Build logs upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
+        if [ $status == "Success" ]; then
+          echo "- Check github artifacts for presigned URLs JSON file containing link to the logs and artifacts." >> $GITHUB_STEP_SUMMARY
+        fi
