@@ -150,3 +150,12 @@ jobs:
           </details>
           '
           echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+          JOB_INFO="- [Job $job_id on ${{ matrix.build_matrix.machine }}]($job_url)"
+          echo -e "$JOB_INFO" > job_info.md
+
+      - name: Upload Job Info Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: job_info_${{ matrix.build_matrix.machine }}
+          path: job_info.md
