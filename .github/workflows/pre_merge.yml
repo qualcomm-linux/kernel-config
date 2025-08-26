@@ -72,9 +72,19 @@ jobs:
       build_matrix: ${{ needs.loading.outputs.build_matrix }}
       full_matrix: ${{ needs.loading.outputs.full_matrix }}
 
+  comment:
+    needs: [test]
+    uses: qualcomm-linux/kernel-config/.github/workflows/comment.yml@main
+    if: needs.test.result != 'skipped' 
+    secrets: inherit
+    with:
+      pr_number: ${{ inputs.pr }}
+      sha: ${{ inputs.sha }}
+      repo: ${{ inputs.repo }}
+
   final-status:
     runs-on: ubuntu-latest
-    needs: [init-status, loading, build, test]
+    needs: [init-status, loading, build, test, comment]
     if: always()
     steps:
       - name: Final workflow status
