@@ -32,51 +32,14 @@ jobs:
           repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
 
-  prepare:
-    runs-on:
-      group: GHA-Kernel-SelfHosted-RG
-      labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
-    steps:
-      - name: Checkout PR Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get base sha
-        id: get_sha
-        run: |
-          pr=${{ inputs.pr }}
-          data=$(curl -H "Authorization: token ${{secrets.PAT}}" https://api.github.com/repos/${{inputs.repo}}/pulls/$pr)
-          base_sha=$(echo "$data" | jq -r '.base.sha')
-          echo "Base SHA: $base_sha"
-          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
-  
-      - name: Set kernel workspace path
-        id: set_kernel_src
-        run: |
-          GITHUB_WORKSPACE=${{ github.workspace }}
-          if [[ ${{ inputs.repo }} =~ "kernel-topics" ]]; then
-            echo "kernel_src=$GITHUB_WORKSPACE/kernel" >> "$GITHUB_OUTPUT"
-          else
-            echo "kernel_src=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
-          fi
-
-    outputs:
-      kernel_src: ${{ steps.set_kernel_src.outputs.kernel_src }}
-      base_sha: ${{ steps.get_sha.outputs.base_sha }}
-
   checker:
-    needs: [prepare, init-status]
+    needs: [init-status]
     uses: qualcomm-linux/kernel-checkers/.github/workflows/checker.yml@main
     with:
       check_name: ${{ matrix.check }}
-      kernel_src: ${{ needs.prepare.outputs.kernel_src }}
-      base_sha: ${{ needs.prepare.outputs.base_sha }}
-      head_sha: ${{ inputs.sha }}
       base_branch: ${{ inputs.ref }}
       pr_number: ${{ inputs.pr }}
       topic_repo: ${{ inputs.repo }}
-
     strategy:
       matrix:
         check: [check-patch-compliance, check-uapi-headers, sparse-check, checkpatch,
