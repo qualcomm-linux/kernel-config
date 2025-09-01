@@ -8,6 +8,9 @@ inputs:
   pr_number:
     description: PR number
     required: false
+  GH_TOKEN:
+    description: Access Token
+    required: true
 
 outputs:
   workspace_path:
@@ -54,16 +57,72 @@ runs:
         git clone https://github.com/qualcomm-linux/kernel.git
         git clone https://github.com/qualcomm-linux/automerge.git
 
+    - name: Scan PR Description
+      if: inputs.base_branch != 'qcom-next-staging'
+      shell: bash
+      run: |
+        curl -L \
+        -H "Authorization: Bearer ${{ inputs.GH_TOKEN }}" \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/${{ inputs.pr_number }}" | \
+        jq --raw-output .body > pr-desc
+        cat pr-desc
+
+    - name: Retrieve Dependent PRs
+      if: inputs.base_branch != 'qcom-next-staging'
+      shell: bash
+      run: |
+        set +o pipefail
+        cat pr-desc | \
+        grep --perl-regexp '^Depends-on:( #\d+,)*( #\d+)$' | \
+        cut -d ':' -f2 | \
+        tr ',' '\n' | \
+        sed 's/^ *//' | \
+        sed 's/#//' > pr-deps
+        cat pr-deps
+
+    - name: Validate Dependent PRs
+      if: inputs.base_branch != 'qcom-next-staging'
+      env:
+        GH_TOKEN: ${{ inputs.GH_TOKEN }}
+      shell: bash
+      run: |
+        touch topic-branches
+        touch invalid-prs
+        base_pr=${{ inputs.pr_number }}
+        while read -r dep_pr; do
+          resp=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/$dep_pr")
+          if echo "$resp" | jq -e ".merged_at != null" > /dev/null; then
+            base_ref=$(echo "$resp" | jq -r .base.ref)
+            echo "$dep_pr,$base_ref" >> topic-branches
+          else
+            echo "#$dep_pr" >> invalid-prs
+          fi
+        done < pr-deps
+
+        if [ -s "invalid-prs" ]; then
+            msg="CI build failed due to invalid or unmerged dependent PRs: $(paste -sd ' ' < invalid-prs)"
+            json=$(jq -n --arg body "$msg" '{body: $body}')
+            curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/qualcomm-linux/kernel-topics/issues/"$base_pr"/comments \
+            -d "$json"
+            exit 1
+        fi
+        cat topic-branches
+
     - name: Create merge configuration
       if: inputs.base_branch != 'qcom-next-staging'
       shell: bash
       run: |
         TOPIC_BRANCH=${{ inputs.base_branch }}
-        cat <<EOF > merge.conf
-        baseline https://github.com/qualcomm-linux/kernel.git qcom-next
-        topic https://github.com/qualcomm-linux/kernel-topics.git $TOPIC_BRANCH
-        EOF
+        echo "baseline https://github.com/qualcomm-linux/kernel.git qcom-next" > merge.conf
+        while IFS=',' read -r pr_number topic_branch; do
+          echo "$topic_branch https://github.com/qualcomm-linux/kernel-topics.git $topic_branch" >> merge.conf
+        done < topic-branches
+        echo "topic https://github.com/qualcomm-linux/kernel-topics.git $TOPIC_BRANCH" >> merge.conf
         echo "File 'merge.conf' created successfully."
+        cat merge.conf
 
     - name: Run auto merge
       id: automerge

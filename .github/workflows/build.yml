@@ -46,6 +46,7 @@ jobs:
         with:
           base_branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number}}
+          GH_TOKEN: ${{ secrets.PAT }}
 
       - name: Pull docker image
         uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
