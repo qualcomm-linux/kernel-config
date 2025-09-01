@@ -75,7 +75,7 @@ jobs:
   comment:
     needs: [test]
     uses: qualcomm-linux/kernel-config/.github/workflows/comment.yml@main
-    if: needs.test.result != 'skipped' 
+    if: always() && needs.test.result != 'skipped' 
     secrets: inherit
     with:
       pr_number: ${{ inputs.pr }}
