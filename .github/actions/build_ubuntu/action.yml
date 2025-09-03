@@ -238,7 +238,7 @@ runs:
         fi
         cp -f contents/* $bootbin_dirname/
         cd $bootbin_dirname
-        rm -rf rawprogram{0..5}_*
+        rm -rf rawprogram{0..5}_* *_rawprogram_*
         echo "bootbin_dirname=$bootbin_dirname" >> "$GITHUB_OUTPUT"
         echo "::endgroup::"
 
