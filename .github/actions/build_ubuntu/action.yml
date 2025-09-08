@@ -277,7 +277,7 @@ runs:
         cp -f flat_meta.tar.gz out/${{ inputs.machine }}_flat_meta.tar.gz
         echo "::endgroup::"
 
-    - name: Prepare file list for upload
+    - name: Prepare file list for artifact upload
       id: process_files
       shell: bash
       run: |
@@ -291,10 +291,19 @@ runs:
         else
           echo "${{ github.workspace }}/out/${{ inputs.machine }}_flat_meta.tar.gz" >> file_list.txt
         fi
+
+    - name: Prepare file list for log upload
+      if: always()
+      shell: bash
+      run: |
+        # check if file_list.txt exists, if not create it
+        if [ ! -f file_list.txt ]; then
+          touch file_list.txt
+        fi
         echo "${{ github.workspace}}/build-logs.log" >> file_list.txt
 
     - name: Upload artifacts to S3
-      if: steps.build.outcome == 'success' && steps.build_rootfs.outcome == 'success'
+      if: always()
       id: upload_artifacts
       uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
       with:
@@ -323,7 +332,7 @@ runs:
           status="Failure"
           emoji=":x:"
         fi
-        echo "### Build completed successfully." >> $GITHUB_STEP_SUMMARY
+        echo "### Build $status $emoji" >> $GITHUB_STEP_SUMMARY
         echo "- Artifacts upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
         echo "- Build logs upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
         if [ $status == "Success" ]; then
