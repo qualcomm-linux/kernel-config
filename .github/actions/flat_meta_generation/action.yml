@@ -45,6 +45,11 @@ runs:
           echo "Firmware ID : $firmwareid"
           echo "-----------------------------"
 
+          if [ -z "$buildid" ]; then
+            echo "No Build Id for $target, skip generating Flat Build."
+            continue
+          fi
+
           platform=$(echo "$buildid" | cut -d '.' -f1)
           build_dir="$workspace/../flatbuild-$platform"
           boot_dir="$build_dir/${platform}_bootbinaries"
