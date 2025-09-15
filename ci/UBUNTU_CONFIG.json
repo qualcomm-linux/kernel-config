@@ -9,7 +9,7 @@
     },
     "qcs6490-rb3gen2": {
         "machine": "qcs6490-rb3gen2",
-        "target": "KLM",
+        "target": "QLI",
         "firmware": "kernel/ubuntu-firmware/linux-firmware_20250317.git1d4c88ee-0ubuntu1.3_arm64.deb",
         "efi": "qualcomm-linux/kernel/ubuntu-static-efi/efiesp.bin",
         "bootbin": "QCM6490.LE.1.0-00376-STD.PROD-1/QCM6490_bootbinaries.zip",
@@ -17,7 +17,7 @@
     },
     "qcs9100-ride-r3": {
         "machine": "qcs9100-ride-r3",
-        "target": "KLM",
+        "target": "QLI",
         "firmware": "kernel/ubuntu-firmware/linux-firmware_20250317.git1d4c88ee-0ubuntu1.3_arm64.deb",
         "efi": "qualcomm-linux/kernel/ubuntu-static-efi/efiesp.bin",
         "bootbin": "QCS9100.LE.1.0-00243-STD.PROD-1/QCS9100_bootbinaries.zip",
@@ -25,7 +25,7 @@
     },
     "qcs8300-ride": {
         "machine": "qcs8300-ride",
-        "target": "KLM",
+        "target": "QLI",
         "firmware": "kernel/ubuntu-firmware/linux-firmware_20250317.git1d4c88ee-0ubuntu1.3_arm64.deb",
         "efi": "qualcomm-linux/kernel/ubuntu-static-efi/efiesp.bin",
         "bootbin": "QCS8300.LE.1.0-00137-STD.PROD-1/QCS8300_bootbinaries.zip",

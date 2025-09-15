@@ -29,7 +29,7 @@ inputs:
     description: Machine to build the kernel for
     required: true
   target:
-    description: Target for the build (e.g., KLM)
+    description: Target for the build (e.g., QLI)
     required: true
   efi:
     description: EFI file to use for the build
