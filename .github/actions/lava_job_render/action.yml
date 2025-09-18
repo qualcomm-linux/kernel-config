@@ -120,7 +120,7 @@ runs:
       run: |
         cd ../job_render
         ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 7600)"
-        firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
+
         # using ramdisk_url
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \
@@ -131,13 +131,16 @@ runs:
           jq '.artifacts.ramdisk = env.ramdisk_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
 
         # using firmware_url
-        docker run -i --rm \
-          --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e firmware_url="$firmware_url" \
-          ${{ inputs.docker_image }} \
-          jq '.artifacts.firmware = env.firmware_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+        if [ -n "${{ env.FIRMWARE }}" ]; then
+          firmware_url="$(aws s3 presign s3://qli-stg-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
+          docker run -i --rm \
+            --user "$(id -u):$(id -g)" \
+            --workdir="$PWD" \
+            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+            -e firmware_url="$firmware_url" \
+            ${{ inputs.docker_image }} \
+            jq '.artifacts.firmware = env.firmware_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+        fi
 
     - name: Create lava_job_definition
       shell: bash

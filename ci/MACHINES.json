@@ -22,5 +22,13 @@
     "target": "qcs8300-ride",
     "buildid": "QCS8300.LE.1.0-00137-STD.PROD-1",
     "firmwareid": "qcs8300-ride"
+  },
+  "sm8750-mtp": {
+    "machine": "sm8750-mtp",
+    "firmware": "",
+    "lavaname": "sm8750-mtp",
+    "target": "sm8750-mtp",
+    "buildid": "",
+    "firmwareid": ""
   }
 }
