@@ -85,14 +85,19 @@ runs:
           cd "$artifacts_dir"
 
           aws s3 cp "s3://$s3_bucket/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
-          aws s3 cp "s3://$s3_bucket/meta-qcom/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
 
-          gunzip -c initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz > kerneltest.cpio
-          gunzip -c initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz > firmware.cpio
-          cat kerneltest.cpio firmware.cpio > merged-initramfs-$firmwareid.cpio
-          gzip merged-initramfs-$firmwareid.cpio
+          if [ -n "$firmwareid" ]; then
+            gunzip -c initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz > kerneltest.cpio
+            aws s3 cp "s3://$s3_bucket/meta-qcom/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
+            gunzip -c initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz > firmware.cpio
+            cat kerneltest.cpio firmware.cpio > initramfs-$target.cpio
+            gzip initramfs-$target.cpio
+          else
+            echo "Firmware not available for Target : $target"
+            mv initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz initramfs-$target.cpio.gz
+          fi
 
-          (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/merged-initramfs-$firmwareid.cpio.gz")
+          (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/initramfs-$target.cpio.gz")
 
           wget -O systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb
           dpkg-deb -xv systemd-boot-efi.deb systemd
@@ -104,7 +109,7 @@ runs:
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
             "$docker_image" bash -c "
               generate_boot_bins.sh efi \
-                --ramdisk artifacts/merged-initramfs-$firmwareid.cpio.gz \
+                --ramdisk artifacts/initramfs-$target.cpio.gz \
                 --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
                 --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
                 --linux ../kobj/arch/arm64/boot/Image \
