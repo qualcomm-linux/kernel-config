@@ -18,6 +18,9 @@ inputs:
   PVK:
     description: GitHub App private key
     required: true
+  workflow_name:
+    description: Workflow name to post check_run
+    required: false
 
 runs:
   using: "composite"
@@ -39,6 +42,7 @@ runs:
         ACCESS_TOKEN="${{ steps.app-token.outputs.token }}"
         s3_location="${{ inputs.s3_location }}"
         REPO="${{ inputs.repo }}"
+        post_name="Artifacts${{ inputs.workflow_name }} uploaded to S3"
 
         echo "Creating check run for commit: $HEAD_SHA"
         CHECK_RUN_ID=$(curl -s -L -X POST \
@@ -47,7 +51,7 @@ runs:
           -H "X-GitHub-Api-Version: 2022-11-28" \
           https://api.github.com/repos/$REPO/check-runs \
           -d '{
-            "name": "Artifacts uploaded to S3",
+            "name": "'"$post_name"'",
             "head_sha": "'"$HEAD_SHA"'",
             "status": "in_progress",
             "output": {
@@ -71,7 +75,7 @@ runs:
           -H "X-GitHub-Api-Version: 2022-11-28" \
           https://api.github.com/repos/$REPO/check-runs/$CHECK_RUN_ID \
           -d '{
-            "name": "Artifacts uploaded to S3",
+            "name": "'"$post_name"'",
             "head_sha": "'"$HEAD_SHA"'",
             "status": "completed",
             "conclusion": "success",

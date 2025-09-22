@@ -92,11 +92,25 @@ jobs:
       repo: ${{ github.event.inputs.repo || 'qualcomm-linux-stg/kernel' }}
       build_matrix: ${{ needs.loading.outputs.ubuntu_matrix }}
 
+  check_run:
+    runs-on: ubuntu-latest
+    needs: [init-status, loading, generate_debians]
+    steps:
+      - name: Post check run
+        uses: qualcomm-linux/kernel-config/.github/actions/check_run@main
+        with:
+          sha: ${{ inputs.sha }}
+          repo: ${{ inputs.repo }}
+          s3_location: ${{ needs.generate_debians.outputs.artifacts_location }}
+          workflow_name: " for ${{ github.workflow }}"
+          APPID: ${{ secrets.APPID }}
+          PVK: ${{ secrets.PVK }}
+
   final-status:
     name: Finalize Status
     if: always()
     runs-on: ubuntu-latest
-    needs: generate_debians
+    needs: [generate_debians, check_run]
     steps:
       - name: Set final status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
