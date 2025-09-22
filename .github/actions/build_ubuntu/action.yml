@@ -38,6 +38,11 @@ inputs:
     description: Firmware file to use for the build
     required: true
 
+outputs:
+  artifacts_location:
+    value: ${{ steps.upload_artifacts.outputs.s3_location }}
+    description: AWS location for artifacts 
+
 runs:
   using: 'composite'
   steps:

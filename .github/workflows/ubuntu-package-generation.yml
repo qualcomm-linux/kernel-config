@@ -28,12 +28,19 @@ on:
         required: true
         type: string
 
+    outputs:
+      artifacts_location:
+        description: 'AWS location of ubuntu artifacts'
+        value: ${{ jobs.generate_debians.outputs.artifacts_location }}
+
 jobs:
   generate_debians:
     name: Build
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [self-hosted, kernel-prd-u2404-arm64-xlrg-od-ephem]
+    outputs:
+      artifacts_location: ${{ steps.build.outputs.artifacts_location }}
     strategy:
       fail-fast: false
       matrix:
