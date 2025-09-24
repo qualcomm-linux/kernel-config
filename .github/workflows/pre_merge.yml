@@ -91,7 +91,7 @@ jobs:
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ inputs.sha }}
-          action_mode: ${{ needs.test.result }}
+          action_mode: ${{ needs.test.result != 'skipped' && needs.test.result || needs.build.result }}
           check_name: pre-merge
           repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
