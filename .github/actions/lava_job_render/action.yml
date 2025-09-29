@@ -132,7 +132,7 @@ runs:
 
         # using firmware_url
         if [ -n "${{ env.FIRMWARE }}" ]; then
-          firmware_url="$(aws s3 presign s3://qli-stg-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
+          firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
