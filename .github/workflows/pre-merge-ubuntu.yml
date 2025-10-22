@@ -62,8 +62,8 @@ jobs:
             commit_sha=$(gh pr view ${{ github.event.inputs.qcom-build-utils-pr-number }} --json commits --jq '.commits[-1].oid')
             echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           else
-            # use the latest commit hash from the latest branch
-            commit_sha=$(gh api repos/qualcomm-linux/qcom-build-utils/branches/latest --jq '.commit.sha')
+            # use the latest commit hash from the main branch
+            commit_sha=$(gh api repos/qualcomm-linux/qcom-build-utils/branches/main --jq '.commit.sha')
             echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           fi
           echo "commit_sha=${commit_sha}"
