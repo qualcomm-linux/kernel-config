@@ -26,6 +26,8 @@ runs:
       shell: bash
       run: |
         cd ${{ inputs.workspace_path }}
+        mkdir -p ../kobj
+        env -u KCONFIG_CONFIG ./scripts/kconfig/merge_config.sh -m -O ../kobj arch/arm64/configs/defconfig arch/arm64/configs/prune.config arch/arm64/configs/qcom.config kernel/configs/debug.config
         docker run -i --rm \
         --user $(id -u):$(id -g) \
         --workdir="$PWD" \
