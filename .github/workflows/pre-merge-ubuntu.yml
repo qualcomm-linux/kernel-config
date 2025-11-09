@@ -51,6 +51,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: qualcomm-linux/qcom-build-utils
+          ref: refs/tags/v2.0.0
           token: ${{ secrets.PAT }}
 
       - name: Get commit sha
@@ -62,8 +63,8 @@ jobs:
             commit_sha=$(gh pr view ${{ github.event.inputs.qcom-build-utils-pr-number }} --json commits --jq '.commits[-1].oid')
             echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           else
-            # use the latest commit hash from the main branch
-            commit_sha=$(gh api repos/qualcomm-linux/qcom-build-utils/branches/main --jq '.commit.sha')
+            # use the latest commit hash from the checkout Tag
+            commit_sha=$(git rev-parse HEAD)
             echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           fi
           echo "commit_sha=${commit_sha}"
