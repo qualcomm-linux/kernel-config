@@ -30,5 +30,13 @@
     "target": "sm8750-mtp",
     "buildid": "",
     "firmwareid": ""
+  },
+  "lemans-evk": {
+    "machine": "lemans-evk",
+    "firmware": "sa8775p-ride",
+    "lavaname": "lemans-evk",
+    "target": "lemans-evk",
+    "buildid": "",
+    "firmwareid": ""
   }
 }
