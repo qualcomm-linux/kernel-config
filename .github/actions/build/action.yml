@@ -10,6 +10,11 @@ inputs:
     description: Workspace path
     required: true
 
+outputs:
+  kernel_version:
+    description: Kernel version built
+    value: ${{ steps.get_version.outputs.kernel_version }}
+
 runs:
   using: "composite"
   steps:
@@ -43,3 +48,12 @@ runs:
       run: |
         cd ${{ inputs.workspace_path }}
         (cd ../kobj/tar-install ; find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> ../../artifacts/ramdisk.gz)
+
+    - name: Get Kernel Version
+      id: get_version
+      shell: bash
+      run: |
+        cd ${{ inputs.workspace_path }}
+        version=$(make kernelversion)
+        echo "Kernel Version : $version"
+        echo "kernel_version=$version" >> $GITHUB_OUTPUT

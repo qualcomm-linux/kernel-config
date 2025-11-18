@@ -20,6 +20,15 @@ on:
         type: string
         required: true
 
+      kernel_version:
+        description: Kernel Version
+        type: string
+        required: true
+
+      commit_SHA:
+        description: Kernel Commit SHA
+        type: string
+        required: true
 
 jobs:
   test:
@@ -75,6 +84,8 @@ jobs:
         id: create_job_definition
         with:
           docker_image: ${{ inputs.docker_image }}
+          kernel_version: ${{ inputs.kernel_version }}
+          commit_SHA: ${{ inputs.commit_SHA }}
         env:
           FIRMWARE: ${{ matrix.build_matrix.firmware }}
           MACHINE: ${{ matrix.build_matrix.machine }}

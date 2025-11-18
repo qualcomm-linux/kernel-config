@@ -26,6 +26,9 @@ on:
       s3_location:
         description: "S3 location of uploaded artifacts"
         value: ${{ jobs.build.outputs.s3_location }}
+      kernel_version:
+        description: "Kernel version built"
+        value: ${{ jobs.build.outputs.kernel_version }}
 
 jobs:
   build:
@@ -34,6 +37,7 @@ jobs:
       labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
     outputs:
       s3_location: ${{ steps.upload-artifacts.outputs.s3_location }}
+      kernel_version: ${{ steps.build_workspace.outputs.kernel_version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

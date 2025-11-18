@@ -4,6 +4,12 @@ inputs:
     description: Docker image
     required: true
     default: kmake-image:ver.1.0
+  kernel_version:
+    description: Kernel Version
+    required: true
+  commit_SHA:
+    description: Kernel commit
+    required: true
 
 runs:
   using: "composite"
@@ -75,6 +81,9 @@ runs:
     - name: Create template json
       shell: bash
       run: |
+        major=$(echo "${{ inputs.kernel_version }}" | cut -d. -f1)
+        patchlevel=$(echo "${{ inputs.kernel_version }}" | cut -d. -f2 | cut -d- -f1)
+        extra=$(echo "${{ inputs.kernel_version }}" | grep -o '\-.*' || echo null)
         echo "Creating job definition"
         metadata_url="${{ steps.upload_metadata.outputs.presigned_url }}"
         vmlinux_url="${{ steps.process_urls.outputs.vmlinux_url }}"
@@ -114,6 +123,26 @@ runs:
           -e modules_url="$modules_url" \
           ${{ inputs.docker_image }} \
           jq '.artifacts.modules = env.modules_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+        # Update kernel version
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          -e kernel_version="v${{ inputs.kernel_version }}" \
+          -e commit_tag="${{ inputs.kernel_version}}" \
+          -e commit_SHA="${{ inputs.commit_SHA }}" \
+          -e major="$major" \
+          -e patchlevel="$patchlevel" \
+          -e extra="$extra" \
+          ${{ inputs.docker_image }} \
+          jq '
+            .data.kernel_revision.describe = env.kernel_version
+            | .data.kernel_revision.commit_tags = [env.commit_tag]
+            | .data.kernel_revision.commit = env.commit_SHA
+            | .data.kernel_revision.version.version = (env.major | tonumber)
+            | .data.kernel_revision.version.patchlevel = (env.patchlevel | tonumber)
+            | .data.kernel_revision.version.extra = env.extra
+          ' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
 
     - name: Update firmware and ramdisk
       shell: bash
