@@ -171,11 +171,11 @@ runs:
             jq '.artifacts.firmware = env.firmware_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
         fi
 
-    - name: Upload metadata.json
-      id: upload_metadata
+    - name: Upload cloudData.json
+      id: upload_clouddata
       uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
       with:
-        local_file: ../job_render/data/metadata.json
+        local_file: ../job_render/data/cloudData.json
         s3_bucket: qli-prd-kernel-gh-artifacts
         mode: single-upload
 
