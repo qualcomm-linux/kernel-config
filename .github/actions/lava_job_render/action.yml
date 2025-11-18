@@ -171,6 +171,14 @@ runs:
             jq '.artifacts.firmware = env.firmware_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
         fi
 
+    - name: Upload metadata.json
+      id: upload_metadata
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        local_file: ../job_render/data/metadata.json
+        s3_bucket: qli-prd-kernel-gh-artifacts
+        mode: single-upload
+
     - name: Create lava_job_definition
       shell: bash
       run: |
