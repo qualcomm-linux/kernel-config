@@ -38,7 +38,7 @@ runs:
         --workdir="$PWD" \
         -v "$(dirname $PWD)":"$(dirname $PWD)" \
         ${{ inputs.docker_image }} bash -c "
-          make O=../kobj defconfig
+          make O=../kobj olddefconfig
           make O=../kobj -j$(nproc)
           make O=../kobj -j$(nproc) dir-pkg INSTALL_MOD_STRIP=1
         "
