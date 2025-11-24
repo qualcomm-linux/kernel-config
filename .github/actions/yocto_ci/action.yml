@@ -1,0 +1,179 @@
+name: Yocto Build Generation
+
+inputs:
+  target:
+    description: target
+    type: string
+    required: true
+  workspace_path:
+    description: Workspace path
+    required: true
+  s3_bucket:
+    description: S3 bucket name
+    required: true
+  docker_image:
+    description: Docker image name
+    required: true
+  machine:
+    description: Machine name
+    required: true
+  rootfs:
+    description: rootfs name
+    required: true
+  firmwareid:
+    description: firmware name
+    required: true
+
+outputs:
+  artifacts_location:
+    value: ${{ steps.upload_artifacts.outputs.s3_location }}
+    description: Aws location
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Environment
+      shell: bash
+      run: |
+        workspace=${{ inputs.workspace_path }}
+        s3_bucket=${{ inputs.s3_bucket }}
+        docker_image=${{ inputs.docker_image }}
+        machine=${{ inputs.machine }}
+        rootfs=${{ inputs.rootfs }}
+        firmwareid=${{ inputs.firmwareid }}
+        build_dir="$workspace/../$machine"
+        artifacts_dir="$build_dir/artifacts"
+        rootfs_dir="${artifacts_dir}/${rootfs}"
+
+        echo "target=${{ inputs.target }}" >> $GITHUB_ENV
+        echo "workspace=${{ inputs.workspace_path }}" >> $GITHUB_ENV
+        echo "s3_bucket=${{ inputs.s3_bucket }}" >> $GITHUB_ENV
+        echo "docker_image=${{ inputs.docker_image }}" >> $GITHUB_ENV
+        echo "machine=${{ inputs.machine }}" >> $GITHUB_ENV
+        echo "rootfs=${{ inputs.rootfs }}" >> $GITHUB_ENV
+        echo "build_dir=$build_dir" >> $GITHUB_ENV
+        echo "artifacts_dir=$artifacts_dir" >> $GITHUB_ENV
+        echo "rootfs_dir=$rootfs_dir" >> $GITHUB_ENV
+        echo "firmwareid=$firmwareid" >> $GITHUB_ENV
+
+        mkdir -p "$build_dir"
+        mkdir -p "$artifacts_dir"
+        mkdir -p "$rootfs_dir"
+        mkdir -p "$rootfs_dir"-prop
+
+    - name: Download Artifacts
+      shell: bash
+      run: |
+        cd ${{ env.artifacts_dir }}
+        aws s3 cp s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/initramfs-rootfs-image.cpio.gz .
+        aws s3 cp s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/qcom-multimedia-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz .
+        aws s3 cp s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz .
+        wget -O systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb
+        dpkg-deb -xv systemd-boot-efi.deb systemd
+
+    - name: Append Firmware initramfs
+      shell: bash
+      run: |
+        set -euxo pipefail
+        cd ${{ env.artifacts_dir }}
+        rootfs=${{ env.rootfs }}
+        firmware_file=$(aws s3 ls s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/ | grep "initramfs-firmware-${{ env.firmwareid }}-image-qcom-armv8a\.cpio\.gz" | awk '{print $4}')
+        echo "Firmware File Name: $firmware_file"
+        if [ -n "$firmware_file" ]; then
+          aws s3 cp "s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/$firmware_file" .
+          gunzip -c initramfs-rootfs-image.cpio.gz > initramfs-rootfs-image.cpio
+          gunzip -c $firmware_file > ${{ env.rootfs }}-firmware.cpio
+          cat -- "initramfs-rootfs-image.cpio" "${{ env.rootfs }}-firmware.cpio" > "initramfs-rootfs-${{ env.rootfs }}.cpio"
+          gzip "initramfs-rootfs-${{ env.rootfs }}.cpio"
+        else
+          echo "Firmware not present for the target $rootfs"
+          cp initramfs-rootfs-image.cpio.gz initramfs-rootfs-${{ env.rootfs }}.cpio.gz
+        fi
+
+    - name: Pack Modules in initramfs
+      shell: bash
+      run: |
+        set -euxo pipefail
+        ls -la ${{ env.workspace }}/../kobj
+        (cd "${{ env.workspace }}/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "${{ env.artifacts_dir }}/initramfs-rootfs-${{ env.rootfs }}.cpio.gz")
+
+    - name: Generate EFI Image
+      shell: bash
+      run: |
+        set -euxo pipefail
+        echo "$target"
+        echo "$workspace"
+        echo "$machine"
+
+        cd ${{ env.build_dir }}
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          "${{ env.docker_image }}" bash -c '
+            generate_boot_bins.sh efi \
+              --ramdisk artifacts/initramfs-rootfs-${{ env.rootfs }}.cpio.gz \
+              --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
+              --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
+              --linux ${{ env.workspace }}/../kobj/arch/arm64/boot/Image \
+              --cmdline "copy-modules root=PARTLABEL=rootfs rw rootwait qcom_geni_serial.con_enabled=1 earlycon" \
+              --output images
+          '
+
+    - name: Generate DTB image
+      shell: bash
+      run: |
+        set -euxo pipefail
+        cd ${{ env.build_dir }}
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          "${{ env.docker_image }}" bash -c "
+            generate_boot_bins.sh dtb \
+              --input ${{ env.workspace }}/../kobj/arch/arm64/boot/dts/qcom/$machine.dtb \
+              --output images
+          "
+        ls -la ${{ env.build_dir }}/images
+
+    - name: Unzip Flat Build
+      shell: bash
+      run: |
+        cd ${{ env.artifacts_dir }}
+        tar -xzf qcom-multimedia-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz --strip-components=1 -C ${{ env.rootfs_dir }}
+        tar -xzf qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz --strip-components=1 -C ${{ env.rootfs_dir }}-prop
+
+    - name: Replace EFI and DTB bins
+      shell: bash
+      run: |
+        cp ${{ env.build_dir }}/images/efi.bin ${{ env.rootfs_dir }}
+        cp ${{ env.build_dir }}/images/dtb.bin ${{ env.rootfs_dir }}
+        cp ${{ env.build_dir }}/images/efi.bin ${{ env.rootfs_dir }}-prop
+        cp ${{ env.build_dir }}/images/dtb.bin ${{ env.rootfs_dir }}-prop
+
+    - name: Tar Build
+      shell: bash
+      run: |
+        cd ${{ env.artifacts_dir }}
+        tar -czvf "${{ env.rootfs }}-rootfs.tar.gz" "${{ env.rootfs }}/"
+        tar -czvf "${{ env.rootfs }}-rootfs-prop.tar.gz" "${{ env.rootfs }}-prop/"
+
+    - name: Prepare file list for upload
+      id: process_files
+      shell: bash
+      run: |
+        touch ${{ env.workspace }}/file_list.txt
+        echo "${{ env.artifacts_dir }}/${{ env.rootfs }}-rootfs.tar.gz" >> ${{ env.workspace }}/file_list.txt
+        echo "${{ env.artifacts_dir }}/${{ env.rootfs }}-rootfs-prop.tar.gz" >> ${{ env.workspace }}/file_list.txt
+        cat ${{ env.workspace }}/file_list.txt
+
+    - name: Upload artifacts to S3
+      if: always()
+      id: upload_artifacts
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: ${{ env.s3_bucket }}
+        local_file: ${{ env.workspace }}/file_list.txt
+        mode: multi-upload
+      env:
+        machine: ${{ inputs.rootfs }}_

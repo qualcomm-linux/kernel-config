@@ -5,7 +5,8 @@
     "lavaname": "qcs6490",
     "target": "qcs6490-rb3gen2",
     "buildid": "QCM6490.LE.1.0-00376-STD.PROD-1",
-    "firmwareid": "rb3gen2"
+    "firmwareid": "rb3gen2",
+    "rootfs": "qcs6490-rb3gen2-core-kit"
   },
   "qcs9100-ride-r3": {
     "machine": "qcs9100-ride-r3",
@@ -13,7 +14,8 @@
     "lavaname": "qcs9100-ride",
     "target": "qcs9100-ride-r3",
     "buildid": "QCS9100.LE.1.0-00243-STD.PROD-1",
-    "firmwareid": "sa8775p-ride"
+    "firmwareid": "sa8775p-ride",
+    "rootfs": "qcs9100-ride-sx"
   },
   "qcs8300-ride": {
     "machine": "qcs8300-ride",
@@ -21,7 +23,8 @@
     "lavaname": "qcs8300-ride",
     "target": "qcs8300-ride",
     "buildid": "QCS8300.LE.1.0-00137-STD.PROD-1",
-    "firmwareid": "qcs8300-ride"
+    "firmwareid": "qcs8300-ride",
+    "rootfs": "qcs8300-ride-sx"
   },
   "sm8750-mtp": {
     "machine": "sm8750-mtp",
@@ -29,7 +32,8 @@
     "lavaname": "sm8750-mtp",
     "target": "sm8750-mtp",
     "buildid": "",
-    "firmwareid": ""
+    "firmwareid": "",
+    "rootfs": ""
   },
   "lemans-evk": {
     "machine": "lemans-evk",
@@ -37,6 +41,25 @@
     "lavaname": "lemans-evk",
     "target": "lemans-evk",
     "buildid": "",
-    "firmwareid": ""
+    "firmwareid": "sa8775p-ride",
+    "rootfs": "iq-9075-evk"
+  },
+  "monaco-evk": {
+    "machine": "monaco-evk",
+    "firmware": "qcs8300-ride",
+    "lavaname": "",
+    "target": "monaco-evk",
+    "buildid": "",
+    "firmwareid": "qcs8300-ride",
+    "rootfs": "iq-8275-evk"
+  },
+  "qcs615-adp-air": {
+    "machine": "qcs615-ride",
+    "firmware": "",
+    "lavaname": "",
+    "target": "qcs615-adp-air",
+    "buildid": "",
+    "firmwareid": "qcs615-adp-air",
+    "rootfs": "qcs615-adp-air"
   }
 }

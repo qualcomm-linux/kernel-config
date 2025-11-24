@@ -1,0 +1,88 @@
+---
+name: _build_yocto
+description: Reusable workflow for Yocto Build
+
+on:
+  workflow_call:
+    inputs:
+      docker_image:
+        description: Docker image
+        type: string
+        required: true
+      repo:
+        description: 'Repo Name'
+        required: false
+        type: string
+      ref:
+        description: 'Branch or tag name'
+        required: false
+        type: string
+      pr:
+        description: 'Pull Request Number'
+        required: false
+        type: string
+        default: ''
+      sha:
+        description: Head sha of the PR
+        type: string
+        required: true
+      rootfs_matrix:
+        description: 'Rootfs matrix for Yocto Parallel builds'
+        required: true
+        type: string
+    outputs:
+      artifacts_location:
+        description: 'Artifacts Upload location'
+        value: ${{ jobs.build_kernel.outputs.artifacts_location }}
+
+jobs:
+  build_kernel:
+    name: Build Kernel
+    runs-on:
+      group: GHA-Kernel-Stg-SelfHosted-RG
+      labels: [self-hosted, kernel-stg-u2404-x64-large-od-ephem]
+    outputs:
+      artifacts_location: ${{ steps.build_yocto.outputs.artifacts_location }}
+      workspace_path: ${{ steps.sync.outputs.workspace_path }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rootfs_matrix: ${{ fromJson(inputs.rootfs_matrix) }}
+
+    steps:
+      - name: Sync codebase
+        id: sync
+        uses: qualcomm-linux/kernel-config/.github/actions/sync@main
+        with:
+          base_branch: ${{ inputs.ref }}
+          pr_number: ${{ inputs.pr }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          repo : ${{ inputs.repo }}
+
+      - name: Pull docker image
+        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+        with:
+          image: ${{ inputs.docker_image }}
+
+      - name: Build workspace
+        id: build_workspace
+        uses: qualcomm-linux/kernel-config/.github/actions/build@main
+        with:
+          docker_image: ${{ inputs.docker_image }}
+          workspace_path: ${{ steps.sync.outputs.workspace_path }}
+
+      - name: Build Yocto
+        id: build_yocto
+        uses: qualcomm-linux/kernel-config/.github/actions/yocto_ci@main
+        with:
+          docker_image: ${{ inputs.docker_image }}
+          target: ${{ matrix.target }}
+          workspace_path: ${{ steps.sync.outputs.workspace_path }}
+          s3_bucket: qli-prd-kernel-gh-artifacts
+          machine: ${{ matrix.rootfs_matrix.machine }}
+          rootfs: ${{ matrix.rootfs_matrix.rootfs }}
+          firmwareid: ${{ matrix.rootfs_matrix.firmwareid }}
+        env:
+          token: ${{ secrets.PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
