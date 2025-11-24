@@ -19,6 +19,10 @@ outputs:
     description: Ubuntu matrix for generating packages
     value: ${{ steps.ubuntu-matrix.outputs.ubuntu_matrix }}
 
+  rootfs_matrix:
+    description: Rootfs matrix for Yocto
+    value: ${{ steps.set-matrix.outputs.rootfs_matrix }}
+
 runs:
   using: "composite"
   steps:
@@ -59,6 +63,13 @@ runs:
           const bootbins = Object.values(targets).map(({ target, buildid, firmwareid }) => ({ target, buildid, firmwareid }));
           core.setOutput('bootbins', JSON.stringify(bootbins));
           console.log("Boot Bins:", bootbins);
+
+          // rootfs matrix: machine, rootfs
+          const rootfs_matrix = Object.values(targets)
+            .filter(({ rootfs }) => rootfs && rootfs.trim() !== '') // filter out empty or null in case Yocto Build is not enabled on a target
+            .map(({ machine, rootfs, firmwareid }) => ({ machine, rootfs, firmwareid }));
+          core.setOutput('rootfs_matrix', JSON.stringify(rootfs_matrix));
+          console.log("Rootfs Matrix:", rootfs_matrix);
 
     - name: Set Ubuntu Config Matrix
       id: ubuntu-matrix
