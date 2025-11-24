@@ -42,12 +42,16 @@ runs:
             return;
           }
           // Build matrix: machine, firmware
-          const build_matrix = Object.values(targets).map(({ machine, firmware }) => ({ machine, firmware }));
+          const build_matrix = Object.values(targets)
+            .filter(({ lavaname }) => lavaname && lavaname.trim() !== '')
+            .map(({ machine, firmware }) => ({ machine, firmware }));
           core.setOutput('build_matrix', JSON.stringify(build_matrix));
           console.log("Build Matrix:", build_matrix);
 
           // Full matrix: machine, firmware, lavaname
-          const full_matrix = Object.values(targets).map(({ machine, firmware, lavaname }) => ({ machine, firmware, lavaname }));
+          const full_matrix = Object.values(targets)
+            .filter(({ lavaname }) => lavaname && lavaname.trim() !== '')
+            .map(({ machine, firmware, lavaname }) => ({ machine, firmware, lavaname }));
           core.setOutput('full_matrix', JSON.stringify(full_matrix));
           console.log("Full Matrix:", full_matrix);
 
