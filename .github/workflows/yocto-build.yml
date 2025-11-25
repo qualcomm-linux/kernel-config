@@ -39,8 +39,8 @@ jobs:
   build_kernel:
     name: Build Kernel
     runs-on:
-      group: GHA-Kernel-Stg-SelfHosted-RG
-      labels: [self-hosted, kernel-stg-u2404-x64-large-od-ephem]
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
     outputs:
       artifacts_location: ${{ steps.build_yocto.outputs.artifacts_location }}
       workspace_path: ${{ steps.sync.outputs.workspace_path }}
