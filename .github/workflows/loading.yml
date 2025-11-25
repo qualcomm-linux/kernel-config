@@ -21,6 +21,10 @@ on:
         description: Ubuntu matrix
         value: ${{ jobs.loading.outputs.ubuntu_matrix }}
 
+      rootfs_matrix:
+        description: Rootfs matrix for Yocto
+        value: ${{ jobs.loading.outputs.rootfs_matrix }}
+
 jobs:
   loading:
     runs-on: ubuntu-latest
@@ -29,6 +33,7 @@ jobs:
       full_matrix: ${{ steps.loading.outputs.full_matrix }}
       bootbins: ${{ steps.loading.outputs.bootbins }}
       ubuntu_matrix: ${{ steps.loading.outputs.ubuntu_matrix }}
+      rootfs_matrix: ${{ steps.loading.outputs.rootfs_matrix }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
