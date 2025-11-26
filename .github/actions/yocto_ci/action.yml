@@ -74,7 +74,7 @@ runs:
     - name: Append Firmware initramfs
       shell: bash
       run: |
-        set -euxo pipefail
+        set -ex
         cd ${{ env.artifacts_dir }}
         rootfs=${{ env.rootfs }}
         firmware_file=$(aws s3 ls s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/ | grep "initramfs-firmware-${{ env.firmwareid }}-image-qcom-armv8a\.cpio\.gz" | awk '{print $4}')
