@@ -96,7 +96,7 @@ jobs:
             buildid=$(echo "$row" | jq -r '.buildid')
             echo "BuildId : $buildid"
             platform=$(echo "$buildid" | cut -d '.' -f1)
-            echo "$workspace/"$platform"_bootbinaries.tar.gz" >> $workspace/../artifacts/file_list.txt
+            echo "$workspace/"$target"_bootbinaries.tar.gz" >> $workspace/../artifacts/file_list.txt
           done
 
       - name: Configure AWS

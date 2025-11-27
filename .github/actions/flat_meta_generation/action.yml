@@ -61,8 +61,8 @@ runs:
           aws s3 cp "s3://$s3_bucket/$buildid/${platform}_bootbinaries.zip" .
           aws s3 cp "s3://$s3_bucket/$buildid/contents.zip" .
           
-          unzip "${platform}_bootbinaries.zip"
-          unzip contents.zip
+          unzip -o "${platform}_bootbinaries.zip"
+          unzip -o contents.zip
 
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
@@ -128,5 +128,6 @@ runs:
 
           cp "$build_dir/images/efi.bin" "$boot_dir"
           cp "$build_dir/images/dtb.bin" "$boot_dir"
-          tar -czvf "$workspace/${platform}_bootbinaries.tar.gz" "${platform}_bootbinaries/"
+          mv "${platform}_bootbinaries/" "${target}_bootbinaries/"
+          tar -czvf "$workspace/${target}_bootbinaries.tar.gz" "${target}_bootbinaries/"
         done
