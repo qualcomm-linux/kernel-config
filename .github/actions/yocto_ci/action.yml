@@ -77,7 +77,7 @@ runs:
         set -x
         cd ${{ env.artifacts_dir }}
         rootfs=${{ env.rootfs }}
-        firmware_file=$(aws s3 ls s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/ | grep "initramfs-firmware-${{ env.firmwareid }}-image-qcom-armv8a\.cpio\.gz" | awk '{print $4}')
+        firmware_file=$(aws s3 ls s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/ | grep "initramfs-firmware-${{ env.firmwareid }}-image-qcom-armv8a\.cpio\.gz" | awk '{print $4}' || true)
         echo "Firmware File Name: $firmware_file"
         if [ -n "$firmware_file" ]; then
           aws s3 cp "s3://${{ env.s3_bucket }}/qualcomm-linux/kernel/yocto_rootfs/$firmware_file" .
