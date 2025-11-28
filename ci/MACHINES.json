@@ -40,7 +40,7 @@
     "firmware": "sa8775p-ride",
     "lavaname": "lemans-evk",
     "target": "lemans-evk",
-    "buildid": "",
+    "buildid": "QCS9100.LE.1.0-00243-STD.PROD-1",
     "firmwareid": "sa8775p-ride",
     "rootfs": "iq-9075-evk"
   },
@@ -49,7 +49,7 @@
     "firmware": "qcs8300-ride",
     "lavaname": "",
     "target": "monaco-evk",
-    "buildid": "",
+    "buildid": "QCS8300.LE.1.0-00137-STD.PROD-1",
     "firmwareid": "qcs8300-ride",
     "rootfs": "iq-8275-evk"
   },
