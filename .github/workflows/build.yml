@@ -94,6 +94,8 @@ jobs:
           bootbins='${{ inputs.bootbins }}'
           for row in $(echo "$bootbins" | jq -c '.[]'); do
             buildid=$(echo "$row" | jq -r '.buildid')
+            target=$(echo "$row" | jq -r '.target')
+            echo "target : $target"
             echo "BuildId : $buildid"
             platform=$(echo "$buildid" | cut -d '.' -f1)
             echo "$workspace/"$target"_bootbinaries.tar.gz" >> $workspace/../artifacts/file_list.txt
