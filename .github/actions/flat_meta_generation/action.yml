@@ -109,7 +109,7 @@ runs:
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
             "$docker_image" bash -c '
               generate_boot_bins.sh efi \
-                --ramdisk artifacts/initramfs-${target}.cpio.gz \
+                --ramdisk artifacts/initramfs-$target.cpio.gz \
                 --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
                 --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
                 --linux ../kobj/arch/arm64/boot/Image \
