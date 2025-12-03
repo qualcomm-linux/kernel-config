@@ -107,15 +107,14 @@ runs:
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            "$docker_image" bash -c '
+            "$docker_image" bash -c "
               generate_boot_bins.sh efi \
                 --ramdisk artifacts/initramfs-$target.cpio.gz \
                 --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
                 --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
                 --linux ../kobj/arch/arm64/boot/Image \
-                --cmdline "console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto" \
                 --output images
-            '
+            "
 
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
