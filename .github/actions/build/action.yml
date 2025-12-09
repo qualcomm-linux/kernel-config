@@ -18,15 +18,6 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Download artifacts
-      shell: bash
-      run: |
-        cd ${{ inputs.workspace_path }}
-        mkdir -p ../artifacts && \
-        wget -O ../artifacts/ramdisk.gz https://snapshots.linaro.org/member-builds/qcomlt/testimages/arm64/1379/initramfs-test-image-qemuarm64-20230321073831-1379.rootfs.cpio.gz && \
-        wget -O ../artifacts/systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb && \
-        dpkg-deb -xv ../artifacts/systemd-boot-efi.deb ../artifacts/systemd
-
     - name: Make
       shell: bash
       run: |
@@ -42,12 +33,6 @@ runs:
           make O=../kobj -j$(nproc)
           make O=../kobj -j$(nproc) dir-pkg INSTALL_MOD_STRIP=1
         "
-
-    - name: Package DLKM into ramdisk
-      shell: bash
-      run: |
-        cd ${{ inputs.workspace_path }}
-        (cd ../kobj/tar-install ; find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> ../../artifacts/ramdisk.gz)
 
     - name: Get Kernel Version
       id: get_version
