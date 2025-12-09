@@ -76,6 +76,7 @@ jobs:
       - name: Create file list for artifacts upload
         run: |
           workspace=${{ steps.sync.outputs.workspace_path }}
+          mkdir -p $workspace/../artifacts/
           touch $workspace/../artifacts/file_list.txt
           cd $workspace/../kobj/tar-install
           tar -cJf ${{ github.workspace }}/modules.tar.xz lib/modules/
