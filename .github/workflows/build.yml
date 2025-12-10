@@ -22,6 +22,11 @@ on:
         description: Boot bins for Flat META
         type: string
         required: true
+      repo:
+        description: Target repository
+        type: string
+        required: true
+
     outputs:
       s3_location:
         description: "S3 location of uploaded artifacts"
@@ -51,6 +56,7 @@ jobs:
           base_branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number}}
           GH_TOKEN: ${{ secrets.PAT }}
+          repo: ${{ inputs.repo }}
 
       - name: Pull docker image
         uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main

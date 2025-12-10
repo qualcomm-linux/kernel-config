@@ -47,6 +47,7 @@ jobs:
       pr_number: ${{ inputs.pr }}
       branch: ${{ inputs.ref }}
       bootbins: ${{ needs.loading.outputs.bootbins }}
+      repo: ${{ inputs.repo }}
 
   check_run:
     if: inputs.repo == 'qualcomm-linux/kernel'
