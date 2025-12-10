@@ -11,6 +11,9 @@ inputs:
   GH_TOKEN:
     description: Access Token
     required: true
+  repo:
+    description: repo
+    required: true
 
 outputs:
   workspace_path:
@@ -28,7 +31,7 @@ runs:
         echo "Workspace cleaned successfully!"
 
     - name: Checkout PR branch
-      if: inputs.base_branch == 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel'
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
@@ -42,7 +45,7 @@ runs:
         git config --global user.email "github-actions@github.com"
 
     - name: Sync with latest changes
-      if: inputs.base_branch == 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel'
       shell: bash
       run: |
         set -e
@@ -51,14 +54,14 @@ runs:
         git merge --no-ff origin/${{ inputs.base_branch }}
 
     - name: Clone repositories
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         git clone https://github.com/qualcomm-linux/kernel.git
         git clone https://github.com/qualcomm-linux/automerge.git
 
     - name: Scan PR Description
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         curl -L \
@@ -70,7 +73,7 @@ runs:
         cat pr-desc
 
     - name: Retrieve Dependent PRs
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         set +o pipefail
@@ -83,7 +86,7 @@ runs:
         cat pr-deps
 
     - name: Validate Dependent PRs
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       env:
         GH_TOKEN: ${{ inputs.GH_TOKEN }}
       shell: bash
@@ -112,7 +115,7 @@ runs:
         cat topic-branches
 
     - name: Create merge configuration
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         TOPIC_BRANCH=${{ inputs.base_branch }}
@@ -126,14 +129,14 @@ runs:
 
     - name: Run auto merge
       id: automerge
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         cd kernel
         ../automerge/ci-merge -f ../merge.conf -t head -n
 
     - name: Fetch PR
-      if: inputs.base_branch != 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         cd kernel
@@ -142,7 +145,7 @@ runs:
         git commit -m "Merged PR ${{inputs.pr_number}}"
 
     - name: Fetch PR
-      if: inputs.base_branch == 'qcom-next-staging'
+      if: inputs.repo == 'qualcomm-linux/kernel'
       shell: bash
       run: |
         git checkout ${{ inputs.base_branch }}
@@ -158,7 +161,7 @@ runs:
       id: set-workspace
       shell: bash
       run: |
-        if [[ "${{ inputs.base_branch }}" == "qcom-next-staging" ]]; then
+        if [[ "${{ inputs.repo }}" == "qualcomm-linux/kernel" ]]; then
           echo "workspace=${{ github.workspace }}" >> "$GITHUB_OUTPUT"
         else
           echo "workspace=${{ github.workspace }}/kernel" >> "$GITHUB_OUTPUT"
