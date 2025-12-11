@@ -56,7 +56,7 @@
   "qcs615-adp-air": {
     "machine": "qcs615-ride",
     "firmware": "",
-    "lavaname": "",
+    "lavaname": "qcs615-ride",
     "target": "qcs615-adp-air",
     "buildid": "",
     "firmwareid": "qcs615-adp-air",
