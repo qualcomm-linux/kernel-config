@@ -6,7 +6,7 @@
     "target": "qcs6490-rb3gen2",
     "buildid": "QCM6490.LE.1.0-00376-STD.PROD-1",
     "firmwareid": "rb3gen2",
-    "rootfs": "qcs6490-rb3gen2-core-kit"
+    "rootfs": "rb3gen2-core-kit"
   },
   "qcs9100-ride-r3": {
     "machine": "qcs9100-ride-r3",
@@ -60,6 +60,6 @@
     "target": "qcs615-adp-air",
     "buildid": "",
     "firmwareid": "qcs615-adp-air",
-    "rootfs": "qcs615-adp-air"
+    "rootfs": "qcs615-ride"
   }
 }
