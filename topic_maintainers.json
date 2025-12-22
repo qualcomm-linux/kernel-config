@@ -1,0 +1,8 @@
+{
+    "tech/bsp/soc-infra": [
+        "kernel.tech.bsp.soc-infra.maint"
+    ],
+    "tech/bsp/pinctrl": [
+        "kernel.tech.bsp.soc-infra.maint"
+    ]
+}
