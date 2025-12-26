@@ -1,8 +1,200 @@
 {
-    "tech/bsp/soc-infra": [
-        "kernel.tech.bsp.soc-infra.maint"
+    "tech/all/config": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/documentation": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/glymur": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/hamoa": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/kaanapali": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/pakala": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/qcs615": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/qcs6490": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/qcs8300": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/dt/qcs9100": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/all/workaround": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/bsp/clk": [
+        "kernel.tech.bsp.clk.maint"
+    ],
+    "tech/bsp/interconnect": [
+        "kernel.tech.bsp.interconnect.maint"
     ],
     "tech/bsp/pinctrl": [
         "kernel.tech.bsp.soc-infra.maint"
+    ],
+    "tech/bsp/remoteproc": [
+        "kernel.tech.bsp.soc-infra.maint"
+    ],
+    "tech/bsp/soc-infra": [
+        "kernel.tech.bsp.soc-infra.maint"
+    ],
+    "tech/bus/pci/all": [
+        "kernel.tech.bus.pci.maint"
+    ],
+    "tech/bus/pci/mhi": [
+        "kernel.tech.bus.pci.maint"
+    ],
+    "tech/bus/pci/phy": [
+        "kernel.tech.bus.pci.maint"
+    ],
+    "tech/bus/pci/pwrctl": [
+        "kernel.tech.bus.pci.pwrctl.maint"
+    ],
+    "tech/bus/peripherals": [
+        "kernel.tech.bus.peripherals.maint"
+    ],
+    "tech/bus/usb/dwc": [
+        "kernel.tech.bus.usb.maint"
+    ],
+    "tech/bus/usb/gadget": [
+        "kernel.tech.bus.usb.maint"
+    ],
+    "tech/bus/usb/phy": [
+        "kernel.tech.bus.usb.maint"
+    ],
+    "tech/debug/eud": [
+        "kernel.tech.debug.eud.maint"
+    ],
+    "tech/debug/hwtracing": [
+        "kernel.tech.debug.hwtracing.maint"
+    ],
+    "tech/debug/rdbg": [
+        "kernel.tech.debug.rdbg.maint"
+    ],
+    "tech/debug/soc": [
+        "kernel.tech.debug.soc.maint"
+    ],
+    "tech/mem/dma-buf": [
+        "kernel.tech.mem.maint"
+    ],
+    "tech/mem/iommu": [
+        "kernel.tech.mem.maint"
+    ],
+    "tech/mem/secure-buffer": [
+        "kernel.tech.mem.maint"
+    ],
+    "tech/mm/audio/all": [
+        "kernel.tech.mm.audio.maint"
+    ],
+    "tech/mm/audio/soundwire": [
+        "kernel.tech.mm.audio.maint"
+    ],
+    "tech/mm/camss": [
+        "kernel.tech.mm.camss.maint"
+    ],
+    "tech/mm/drm": [
+        "kernel.tech.mm.drm.maint"
+    ],
+    "tech/mm/fastrpc": [
+        "kernel.tech.mm.fastrpc.maint"
+    ],
+    "tech/mm/gpu": [
+        "kernel.tech.mm.gpu.maint"
+    ],
+    "tech/mm/phy": [
+        "kernel.tech.mm.phy.maint"
+    ],
+    "tech/mm/video": [
+        "kernel.tech.mm.video.maint"
+    ],
+    "tech/mproc/all": [
+        "kernel.tech.mproc.maint"
+    ],
+    "tech/mproc/qmi": [
+        "kernel.tech.mproc.maint"
+    ],
+    "tech/mproc/rpmsg": [
+        "kernel.tech.mproc.maint"
+    ],
+    "tech/net/ath": [
+        "kernel.tech.net.ath.maint"
+    ],
+    "tech/net/bluetooth": [
+        "kernel.tech.net.bluetooth.maint"
+    ],
+    "tech/net/eth": [
+        "kernel.tech.net.eth.maint"
+    ],
+    "tech/net/phy": [
+        "kernel.tech.net.phy.maint"
+    ],
+    "tech/net/qrtr": [
+        "kernel.tech.mproc.maint"
+    ],
+    "tech/net/rmnet": [
+        "kernel.tech.net.rmnet.maint"
+    ],
+    "tech/overlay/dt": [
+        "qualcomm-kernel-maint"
+    ],
+    "tech/pm/opp": [
+        "kernel.tech.pm.power.maint"
+    ],
+    "tech/pm/pmdomain": [
+        "kernel.tech.pm.power.maint"
+    ],
+    "tech/pm/power": [
+        "kernel.tech.pm.power.maint"
+    ],
+    "tech/pm/thermal": [
+        "kernel.tech.pm.thermal.maint"
+    ],
+    "tech/pmic/backlight": [
+        "kernel.tech.pmic.maint"
+    ],
+    "tech/pmic/mfd": [
+        "kernel.tech.pmic.maint"
+    ],
+    "tech/pmic/misc": [
+        "kernel.tech.pmic.maint"
+    ],
+    "tech/pmic/regulator": [
+        "kernel.tech.pmic.maint"
+    ],
+    "tech/pmic/supply": [
+        "kernel.tech.pmic.maint"
+    ],
+    "tech/security/crypto": [
+        "kernel.tech.security.crypto.maint"
+    ],
+    "tech/security/firmware-smc": [
+        "kernel.tech.security.firmware-smc.maint"
+    ],
+    "tech/security/fscrypt": [
+        "kernel.tech.security.crypto.maint"
+    ],
+    "tech/security/ice": [
+        "kernel.tech.security.crypto.maint"
+    ],
+    "tech/storage/all": [
+        "kernel.tech.storage.maint"
+    ],
+    "tech/storage/nvmem": [
+        "kernel.tech.storage.nvmem.maint"
+    ],
+    "tech/storage/phy": [
+        "kernel.tech.storage.maint"
+    ],
+    "tech/virt/gunyah": [
+        "kernel.tech.virt.gunyah.maint"
     ]
 }
