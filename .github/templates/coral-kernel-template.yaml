@@ -83,15 +83,30 @@ on:
 
       workflow.ubuntu.id:
         type: number
-        required: true
+        required: false
         coral.actions/metadata:
           ui-annotations:
             type: Number
-            label: pre_merge_ubuntu Workflow ID
-            description: ID of the Ubuntu Package Generation Workflow to be executed
-            rules:
-              - type: required
-                message: Ubuntu package generation Workflow ID
+            label: Ubuntu package generation Workflow ID
+            description: ID of the Ubuntu package generation GitHub Workflow (Enter 0 to skip this run)
+
+      workflow.yocto.id:
+        type: number
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Yocto Build generation Workflow ID
+            description: ID of the Yocto Build GitHub Workflow (Enter 0 to skip this run)
+
+      workflow.reviewer.id:
+        type: number
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Add Reviewer Workflow ID
+            description: ID of the Add Reviewer GitHub Workflow (Enter 0 to skip this run)
 
       labels:
         type: string
@@ -216,6 +231,60 @@ jobs:
           ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
           JSON_CHANGE_SPEC=changeSpec.json \
           WORKFLOW_ID=${{ inputs.workflow.kernel.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+      - name: ubuntu-generation
+        if: ${{ inputs.workflow.ubuntu.id != 0 }}
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.ubuntu.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+      - name: pre-merge-yocto
+        if: ${{ inputs.workflow.yocto.id != 0 }}
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.yocto.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+      - name: add-reviewer
+        if: ${{ inputs.workflow.reviewer.id != 0 }}
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.reviewer.id }} \
           ./script.sh
           rm -rf $uuid
         coral.actions/expected-exit-codes: [0]
