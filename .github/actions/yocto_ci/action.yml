@@ -116,7 +116,7 @@ runs:
               --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
               --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
               --linux ${{ env.workspace }}/../kobj/arch/arm64/boot/Image \
-              --cmdline "copy-modules root=PARTLABEL=rootfs rw rootwait qcom_geni_serial.con_enabled=1 earlycon" \
+              --cmdline "copy-modules root=PARTLABEL=rootfs rw rootwait console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto" \
               --output images
           '
 
