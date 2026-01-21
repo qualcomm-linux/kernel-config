@@ -61,5 +61,23 @@
     "buildid": "",
     "firmwareid": "qcs615-adp-air",
     "rootfs": "qcs615-ride"
+  },
+  "kaanapali-qrd": {
+    "machine": "kaanapali-qrd",
+    "firmware": "",
+    "lavaname": "kaanapali-qrd",
+    "target": "kaanapali-qrd",
+    "buildid": "",
+    "firmwareid": "",
+    "rootfs": "kaanapali-qrd"
+  },
+  "x1e80100-crd": {
+    "machine": "x1e80100-crd",
+    "firmware": "",
+    "lavaname": "x1e80100",
+    "target": "x1e80100-crd",
+    "buildid": "",
+    "firmwareid": "",
+    "rootfs": "x1e80100-crd"
   }
 }
