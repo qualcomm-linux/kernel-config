@@ -143,6 +143,31 @@ jobs:
             exit 1
           fi
 
+      - name: Fetch LAVA results JSON
+        if: success() || failure()
+        id: fetch_results
+        run: |
+          set -e
+          MACHINE="${{ matrix.build_matrix.machine }}"
+          SUITE_NAME="LAVA-${MACHINE}"
+          IN="results.json"
+
+          mkdir -p lava-results
+
+          curl -s "https://lava-oss.qualcomm.com/api/v0.2/jobs/$JOB_ID/tests/" > results.json
+          echo "Downloaded results to results.json"
+          jq '.[0] ? // . | length' results.json || true
+
+          jq '
+            (if type=="object" and .results then .results else . end)
+              | map(select(.metadata | tostring | contains("0_qcom-next-ci-premerge-tests")))
+              | map(select(.result == "pass" or .result == "fail" or .result == "skip" or .result == "error"))
+              | map({
+                      name: .name,
+                      result: .result
+                  })
+              ' "$IN" > lava-results/Tests-${MACHINE}.json
+
       - name: Update summary
         if: success() || failure()
         shell: bash
@@ -170,3 +195,10 @@ jobs:
         with:
           name: job_info_${{ matrix.build_matrix.machine }}
           path: job_info.md
+
+      - name: Upload Lava Json File
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tests-${{ matrix.build_matrix.machine }}
+          path: lava-results/*.json

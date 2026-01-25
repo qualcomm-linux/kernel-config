@@ -46,3 +46,97 @@ jobs:
           -H "X-GitHub-Api-Version: 2022-11-28" \
           https://api.github.com/repos/${{ inputs.repo }}/issues/${{ inputs.pr }}/comments \
           -d "$json" 
+
+  publish:
+    name: Publish LAVA results
+    if: always()
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Download all Json artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Tests-*
+          path: all-json
+          merge-multiple: true
+
+      - name: List Json files
+        run: |
+          echo "Collected Json files:"
+          find all-json -type f -name '*.json' -maxdepth 4 | sort
+
+      - name: Generate access token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.APPID }}
+          private-key: ${{ secrets.PVK }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Parse json files
+        run: |
+          set -euo pipefail
+          GLOB="all-json/*.json"
+
+          shopt -s nullglob
+          files=( $GLOB )
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No files matched: ${GLOB}" >&2
+            exit 1
+          fi
+
+          # Start a new Markdown summary
+          SUMMARY_FILE="summary.md"
+          : > "$SUMMARY_FILE"
+
+          for f in "${files[@]}"; do
+            base="$(basename "$f")"
+            target="${base%.*}"  # filename without extension, e.g., rb3gen2-corekit.json -> rb3gen2-corekit
+
+            # Fail if JSON invalid
+            jq empty "$f" >/dev/null
+
+            total=$(jq 'length' "$f")
+            pass=$(jq '[ .[] | select(.result=="pass") ] | length' "$f")
+            fail=$(jq '[ .[] | select(.result=="fail") ] | length' "$f")
+            error=$(jq '[ .[] | select(.result=="error") ] | length' "$f")
+            skip=$(jq '[ .[] | select(.result=="skip" or .result=="skipped") ] | length' "$f")
+
+            # Collect failing test names (if any)
+            mapfile -t fail_names < <(jq -r '[ .[] | select(.result=="fail") | .name ] | .[]?' "$f")
+
+            {
+              echo "## ${target}"
+              echo "- Total: ${total} (✅ ${pass}, ❌ ${fail}, ⛔ ${error}, ⚠️ ${skip})"
+              if (( fail > 0 )); then
+                echo "  - Failures:"
+                for n in "${fail_names[@]}"; do
+                  [ -n "$n" ] && echo "    - ${n}"
+                done
+              fi
+            echo
+            } >> "$SUMMARY_FILE"
+          done
+
+          echo "Wrote Markdown summary to: $SUMMARY_FILE"
+          sed -n '1,120p' "$SUMMARY_FILE"
+
+      - name: Post results to PR
+        run: |
+          #echo '${{ steps.publish_test.outputs.json }}' > test-results.json
+          #CONTENT=$(jq -Rs . < test-results.json)
+          DATA=$(jq -n --rawfile body summary.md '{body: $body}')
+
+          curl -L \
+          -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.PAT }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://api.github.com/repos/${{ inputs.repo }}/issues/${{ inputs.pr }}/comments \
+          -d "$DATA"
