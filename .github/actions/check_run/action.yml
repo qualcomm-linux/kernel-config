@@ -20,7 +20,7 @@ inputs:
     required: true
   workflow_name:
     description: Workflow name to post check_run
-    required: false
+    required: true
 
 runs:
   using: "composite"
@@ -42,9 +42,24 @@ runs:
         ACCESS_TOKEN="${{ steps.app-token.outputs.token }}"
         s3_location="${{ inputs.s3_location }}"
         REPO="${{ inputs.repo }}"
-        post_name="Artifacts${{ inputs.workflow_name }} uploaded to S3"
+        workflow_name="${{ inputs.workflow_name }}"
 
-        echo "Creating check run for commit: $HEAD_SHA"
+        echo "Creating check run for workflow : $workflow_name and commit: $HEAD_SHA"
+
+        if [ "$workflow_name" = "pre_merge" ] || [ "$workflow_name" = "pre_merge_ubuntu" ] || [ "$workflow_name" = "pre_merge_yocto" ]; then
+          post_name="Artifacts for ${{ inputs.workflow_name }} uploaded to S3"
+          title="Check S3 Location"
+          text=$s3_location
+        elif [ "$workflow_name" = "Kernel Checkers" ]; then
+          post_name="Kernel Checkers passed"
+          echo "$post_name"
+          title="Kernel checker"
+          text=""
+        fi
+
+        echo "Post name : $post_name"
+        echo "Title : $title"
+
         CHECK_RUN_ID=$(curl -s -L -X POST \
           -H "Accept: application/vnd.github+json" \
           -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -55,16 +70,16 @@ runs:
             "head_sha": "'"$HEAD_SHA"'",
             "status": "in_progress",
             "output": {
-              "title": "Check S3 Location",
+              "title": "'"$title"'",
               "summary": "",
-              "text": "'"$s3_location"'"
+              "text": "'"$text"'"
             }
           }' | jq -r '.id')
 
-        if [ -z "$CHECK_RUN_ID" ]; then
-          echo "Failed to create check run. Exiting."
-          exit 1
-        fi
+          if [ -z "$CHECK_RUN_ID" ]; then
+            echo "Failed to create check run. Exiting."
+            exit 1
+          fi
 
         echo "Check run created with ID: $CHECK_RUN_ID"
 
@@ -80,10 +95,10 @@ runs:
             "status": "completed",
             "conclusion": "success",
             "output": {
-              "title": "Check S3 Location",
+              "title": "'"$title"'",
               "summary": "",
-              "text": "'"$s3_location"'"
+              "text": "'"$text"'"
             }
           }'
 
-        echo "Check run updated successfully."
+        echo "Check run updated successfully for $workflow_name"

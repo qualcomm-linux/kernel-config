@@ -78,7 +78,7 @@ jobs:
           sha: ${{ inputs.sha }}
           repo: ${{ inputs.repo }}
           s3_location: ${{ needs.build_yocto.outputs.artifacts_location }}
-          workflow_name: " for ${{ github.workflow }}"
+          workflow_name: "${{ github.workflow }}"
           APPID: ${{ secrets.APPID }}
           PVK: ${{ secrets.PVK }}
 
