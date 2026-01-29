@@ -1,0 +1,166 @@
+---
+name: Compile Yocto Build
+description: Compile Yocto Build using kas files
+
+inputs:
+  target:
+    description: target
+    type: string
+    required: true
+  workspace_path:
+    description: Workspace path
+    required: true
+  s3_bucket:
+    description: S3 bucket name
+    required: true
+  docker_image:
+    description: Docker image name
+    required: true
+  machine:
+    description: Machine name
+    required: true
+  rootfs:
+    description: rootfs name
+    required: true
+  kernel_ver:
+    description: Kernel version on which CI is running
+    required: true
+  sha:
+    description: SHA of kernel, on which CI will run
+    required: true
+  cache_dir: 
+    description: Cache directory
+    required: true
+  
+
+outputs:
+  artifacts_location:
+    value: ${{ steps.upload_artifacts.outputs.s3_location }}
+    description: Aws location
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Environment
+      shell: bash
+      run: |
+        set -ex
+        workspace=${{ inputs.workspace_path }}
+        s3_bucket=${{ inputs.s3_bucket }}
+        docker_image=${{ inputs.docker_image }}
+        machine=${{ inputs.machine }}
+        rootfs=${{ inputs.rootfs }}
+        build_dir="$workspace/../$rootfs"
+        sha=${{ inputs.sha }}
+        kernel_ver=${{ inputs.kernel_ver }}
+
+        echo "target=${{ inputs.target }}" >> $GITHUB_ENV
+        echo "workspace=${{ inputs.workspace_path }}" >> $GITHUB_ENV
+        echo "s3_bucket=${{ inputs.s3_bucket }}" >> $GITHUB_ENV
+        echo "docker_image=${{ inputs.docker_image }}" >> $GITHUB_ENV
+        echo "machine=${{ inputs.machine }}" >> $GITHUB_ENV
+        echo "build_dir=$build_dir" >> $GITHUB_ENV
+        echo "sha=${{ inputs.sha }}" >> $GITHUB_ENV
+        echo "rootfs=${{ inputs.rootfs }}" >> $GITHUB_ENV
+        echo "kernel_ver=${{ inputs.kernel_ver }}" >> $GITHUB_ENV
+
+        echo "LOGFILE=${{ github.workspace }}/build-logs.log" >> "$GITHUB_ENV"
+
+        mkdir -p "$build_dir"
+
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Setup Kas Environment
+      shell: bash
+      id: download_kas
+      run: |
+        set -ex
+        cd ${{ env.build_dir }}
+        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/${{ inputs.kernel_ver }}/kas-build-${{ env.rootfs }}.yml .
+        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/${{ inputs.kernel_ver }}/kernel-override.yml .
+        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/${{ inputs.kernel_ver }}/build_id.txt .
+
+        kernel_sha="${{ env.sha }}"
+        echo "SHA : $kernel_sha"
+        kernel_ver="${{ env.kernel_ver }}"
+        if [[ $kernel_ver == "6.18" ]]; then
+          sed -i "s/SRCREV:pn-linux-qcom = \"[^\"]*\"/SRCREV:pn-linux-qcom = \"$kernel_sha\"/" kernel-override.yml
+        else
+          sed -i "s/SRCREV:pn-linux-qcom-next = \"[^\"]*\"/SRCREV:pn-linux-qcom-next = \"$kernel_sha\"/" kernel-override.yml
+        fi
+
+    - name: Run Kas Build
+      id: build
+      shell: bash
+      run: |
+        set -ex
+        cd ${{ env.build_dir }}
+        mkdir kas
+        ls -la
+        export KAS_WORK_DIR=$PWD/kas
+        echo $KAS_WORK_DIR
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          "${{ env.docker_image }}" bash -c "
+            kas build kas-build-${{ env.rootfs }}.yml:kernel-override.yml
+          "
+
+    - name: Prepare file list for log upload
+      if: always()
+      shell: bash
+      run: |
+        set -ex
+        # check if file_list.txt exists, if not create it
+        if [ ! -f ${{ github.workspace }}/file_list.txt ]; then
+          touch ${{ github.workspace }}/file_list.txt
+        fi
+        # # echo "${{ github.workspace}}/build-logs.log" >> file_list.txt
+        cd ${{ env.build_dir }}/build/tmp/deploy/images/${{ env.rootfs }}/
+        ls -la
+        LINK="qcom-multimedia-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz"
+        TARGET=$(readlink "$LINK")
+        cp "$TARGET" ${{ env.build_dir }}/${{ env.rootfs }}.tar.gz
+
+        LINK_PROP="qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz"
+        TARGET_PROP=$(readlink "$LINK")
+        cp "$TARGET_PROP" ${{ env.build_dir }}/${{ env.rootfs }}-prop.tar.gz
+        
+        echo "${{ env.build_dir }}/${{ env.rootfs }}.tar.gz" >> ${{ github.workspace }}/file_list.txt
+        echo "${{ env.build_dir }}/${{ env.rootfs }}-prop.tar.gz" >> ${{ github.workspace }}/file_list.txt
+        echo "${{ env.build_dir }}/build_id.txt" >> ${{ github.workspace }}/file_list.txt
+
+    - name: Upload artifacts to S3
+      if: always()
+      id: upload_artifacts
+      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      with:
+        s3_bucket: qli-prd-kernel-gh-artifacts
+        local_file: ${{ github.workspace }}/file_list.txt
+        mode: multi-upload
+      env:
+        machine: ${{ inputs.rootfs }}_
+
+    - name: Update Summary
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.upload_artifacts.outcome }}" == "success" ]; then
+          status="Success"
+          emoji=":heavy_check_mark:"
+        else
+          status="Failure"
+          emoji=":x:"
+        fi
+        echo "### Build completed successfully." >> $GITHUB_STEP_SUMMARY
+        echo "- Artifacts upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
+        echo "- Build logs upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
+        if [ $status == "Success" ]; then
+          echo "- Check github artifacts for presigned URLs JSON file containing link to the logs and artifacts." >> $GITHUB_STEP_SUMMARY
+        fi
