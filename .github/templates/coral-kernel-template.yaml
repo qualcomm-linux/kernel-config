@@ -108,6 +108,18 @@ on:
             label: Add Reviewer Workflow ID
             description: ID of the Add Reviewer GitHub Workflow (Enter 0 to skip this run)
 
+      workflow.yocto_postmerge.id:
+        type: number
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Yocto Post Merge Build generation Workflow ID
+            description: ID of the Yocto Build GitHub Workflow to be executed
+            rules:
+              - type: required
+                message: Yocto Build generation Workflow ID
+
       labels:
         type: string
         coral.actions/metadata:
@@ -285,6 +297,24 @@ jobs:
           ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
           JSON_CHANGE_SPEC=changeSpec.json \
           WORKFLOW_ID=${{ inputs.workflow.reviewer.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
+      - name: post-merge-yocto
+        if: ${{ inputs.workflow.reviewer.id != 0 }}
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.yocto_postmerge.id }} \
           ./script.sh
           rm -rf $uuid
         coral.actions/expected-exit-codes: [0]

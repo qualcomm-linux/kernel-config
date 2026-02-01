@@ -69,7 +69,7 @@
     "target": "kaanapali-qrd",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": "kaanapali-qrd"
+    "rootfs": ""
   },
   "x1e80100-crd": {
     "machine": "x1e80100-crd",
@@ -78,6 +78,6 @@
     "target": "x1e80100-crd",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": "x1e80100-crd"
+    "rootfs": ""
   }
 }
