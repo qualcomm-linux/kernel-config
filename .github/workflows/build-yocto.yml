@@ -5,10 +5,6 @@ description: Reusable workflow for Yocto Build
 on:
   workflow_call:
     inputs:
-      docker_image:
-        description: Docker image
-        type: string
-        required: true
       repo:
         description: 'Repo Name'
         required: false
@@ -17,11 +13,6 @@ on:
         description: 'Branch or tag name'
         required: false
         type: string
-      pr:
-        description: 'Pull Request Number'
-        required: false
-        type: string
-        default: ''
       sha:
         description: Head sha of the PR
         type: string
@@ -39,8 +30,31 @@ on:
         description: 'Artifacts Upload location'
         value: ${{ jobs.compile_yocto.outputs.artifacts_location }}
 
+env:
+  CACHE_DIR: /efs/kernel/meta-qcom
+
 jobs:
+  kas-setup:
+    runs-on:
+      group: GHA-Kernel-Stg-SelfHosted-RG
+      labels: [self-hosted, kernel-stg-u2404-x64-large-od-ephem]
+    steps:
+      - name: Update kas-container
+        run: |
+          KAS_CONTAINER=$RUNNER_TEMP/kas-container
+          echo "KAS_CONTAINER=$KAS_CONTAINER" >> $GITHUB_ENV
+          LATEST=$(git ls-remote --tags --refs --sort="v:refname" https://github.com/siemens/kas | tail -n1 | sed 's/.*\///')
+          wget -qO ${KAS_CONTAINER} https://raw.githubusercontent.com/siemens/kas/refs/tags/$LATEST/kas-container
+          chmod +x ${KAS_CONTAINER}
+
+      - name: Upload kas-container
+        uses: actions/upload-artifact@v4
+        with:
+          name: kas-container
+          path: ${{ env.KAS_CONTAINER }}
+
   compile_yocto:
+    needs: kas-setup
     name: Build Yocto
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
@@ -54,24 +68,17 @@ jobs:
         rootfs_matrix: ${{ fromJson(inputs.rootfs_matrix) }}
 
     steps:
-      - name: Pull docker image
-        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
-        with:
-          image: ${{ inputs.docker_image }}
-
       - name: Build Yocto
         id: build_yocto
         uses: qualcomm-linux/kernel-config/.github/actions/build_yocto@main
         with:
-          docker_image: ${{ inputs.docker_image }}
-          target: ${{ matrix.target }}
           workspace_path: ${{ github.workspace }}
           s3_bucket: qli-prd-kernel-gh-artifacts
-          machine: ${{ matrix.rootfs_matrix.machine }}
           rootfs: ${{ matrix.rootfs_matrix.rootfs }}
-          firmwareid: ${{ matrix.rootfs_matrix.firmwareid }}
           kernel_ver: ${{ inputs.kernel_ver }}
           sha: ${{ inputs.sha }}
+          CACHE_DIR : ${CACHE_DIR}
+          kas: ${{ env.KAS_CONTAINER }}
         env:
           token: ${{ secrets.PAT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

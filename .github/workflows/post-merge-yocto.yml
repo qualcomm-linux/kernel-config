@@ -61,10 +61,8 @@ jobs:
     uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
     secrets: inherit
     with:
-      docker_image: kmake-image:ver.1.0
       repo: ${{ github.event.inputs.repo || 'qualcomm-linux/kernel' }}
       ref: ${{ github.event.inputs.ref || 'qcom-next' }}
-      pr: ${{ github.event.inputs.pr || '' }}
       SHA: ${{ github.event.inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
       kernel_ver: ${{ github.event.inputs.kernel_ver }}
