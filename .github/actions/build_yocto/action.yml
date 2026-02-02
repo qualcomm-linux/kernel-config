@@ -38,8 +38,8 @@ runs:
         set -ex
 
         # use a monthly sstate cache folder
-        echo "DL_DIR=${{inputs.cache_dir}}/downloads" >> $GITHUB_ENV
-        echo "SSTATE_DIR=${{inputs.cache_dir}}/sstate-cache-$(date '+%Y-%m')" >> $GITHUB_ENV
+        echo "DL_DIR=${{inputs.cache_dir}}/downloads-1" >> $GITHUB_ENV
+        echo "SSTATE_DIR=${{inputs.cache_dir}}/sstate-cache-$(date '+%Y-%m')-1" >> $GITHUB_ENV
 
         workspace=${{ inputs.workspace_path }}
         s3_bucket=${{ inputs.s3_bucket }}
