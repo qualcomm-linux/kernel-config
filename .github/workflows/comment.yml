@@ -75,52 +75,74 @@ jobs:
 
       - name: Parse json files
         run: |
-          set -euo pipefail
-          GLOB="all-json/*.json"
+          #!/usr/bin/env bash
+          set -e
 
-          shopt -s nullglob
-          files=( $GLOB )
+          INPUT_DIR="all-json/"
+          OUTPUT="summary.md"
 
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No files matched: ${GLOB}" >&2
-            exit 1
-          fi
+          # Collect file list
+          FILES=("$INPUT_DIR"/*.json)
 
-          # Start a new Markdown summary
-          SUMMARY_FILE="summary.md"
-          : > "$SUMMARY_FILE"
-
-          for f in "${files[@]}"; do
-            base="$(basename "$f")"
-            target="${base%.*}"  # filename without extension, e.g., rb3gen2-corekit.json -> rb3gen2-corekit
-
-            # Fail if JSON invalid
-            jq empty "$f" >/dev/null
-
-            total=$(jq 'length' "$f")
-            pass=$(jq '[ .[] | select(.result=="pass") ] | length' "$f")
-            fail=$(jq '[ .[] | select(.result=="fail") ] | length' "$f")
-            error=$(jq '[ .[] | select(.result=="error") ] | length' "$f")
-            skip=$(jq '[ .[] | select(.result=="skip" or .result=="skipped") ] | length' "$f")
-
-            # Collect failing test names (if any)
-            mapfile -t fail_names < <(jq -r '[ .[] | select(.result=="fail") | .name ] | .[]?' "$f")
-
-            {
-              echo "## ${target}"
-              echo "- Total: ${total} (✅ ${pass}, ❌ ${fail}, ⛔ ${error}, ⚠️ ${skip})"
-              if (( fail > 0 )); then
-                echo "  - Failures:"
-                for n in "${fail_names[@]}"; do
-                  [ -n "$n" ] && echo "    - ${n}"
-                done
-              fi
-            echo
-            } >> "$SUMMARY_FILE"
+          # Extract target names (filenames without .json)
+          TARGETS=()
+          for f in "${FILES[@]}"; do
+            base=$(basename "$f" .json)
+            TARGETS+=("$base")
           done
 
-          echo "Wrote Markdown summary to: $SUMMARY_FILE"
-          sed -n '1,120p' "$SUMMARY_FILE"
+          # Build list of ALL test names
+          TESTS=$(grep -ho '"name"[ ]*:[ ]*"[^"]*"' "$INPUT_DIR"/*.json \
+            | sed 's/.*"name"[ ]*:[ ]*"//' | sed 's/"$//' \
+            | sort -u)
+
+          # Start table
+          echo "# Test Matrix" > "$OUTPUT"
+          echo "" >> "$OUTPUT"
+
+          # Header
+          printf "| Test Case " >> "$OUTPUT"
+          for t in "${TARGETS[@]}"; do
+            target_name="${t#Tests-}"
+            printf "|     %s     " "$target_name" >> "$OUTPUT"
+          done
+          printf " | \n" >> "$OUTPUT"
+
+          # Separator
+          printf "| --- " >> "$OUTPUT"
+          for _ in "${TARGETS[@]}"; do
+            printf "| ---- " >> "$OUTPUT"
+          done
+          printf "|\n" >> "$OUTPUT"
+
+          # Build rows
+          for test in $TESTS; do
+            printf "| %s " "$test" >> "$OUTPUT"
+
+            for t in "${TARGETS[@]}"; do
+              file="$INPUT_DIR/$t.json"
+              # Extract the result for this test
+              res=$(grep -A1 "\"name\" *: *\"$test\"" "$file" 2>/dev/null \
+                | grep '"result"' \
+                | sed 's/.*"result"[ ]*:[ ]*"//' | sed 's/"$//' \
+                || true)
+              echo "Salendar : $res"
+              case "$res" in
+                pass) cell="✅ Pass" ;;
+                fail) cell="❌ Fail" ;;
+                skip) cell="⚠️ skip" ;;
+                error) cell="⛔ Error" ;;
+                *)    cell="◻️" ;;   # missing
+              esac
+
+              printf "| %s " "$cell" >> "$OUTPUT"
+            done
+
+            printf "|\n" >> "$OUTPUT"
+          done
+
+          echo ""
+          echo "[OK] Generated table: $OUTPUT"
 
       - name: Post results to PR
         run: |
