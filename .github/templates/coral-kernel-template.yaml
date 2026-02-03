@@ -302,7 +302,7 @@ jobs:
         coral.actions/expected-exit-codes: [0]
 
       - name: post-merge-yocto
-        if: ${{ workflow.yocto_postmerge.id != 0 }}
+        if: ${{ inputs.workflow.yocto_postmerge.id != 0 }}
         run: |
           printenv
           uuid=$(openssl rand -hex 16)
