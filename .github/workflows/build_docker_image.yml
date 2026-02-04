@@ -1,0 +1,83 @@
+name: Build and Push Kmake Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      GIT_REPO_URL:
+        description: 'GitHub repository URL to clone'
+        required: false
+        type: string
+        default: https://github.com/qualcomm-linux/kmake-image.git
+      DOCKERFILE_PATH:
+        description: 'Path to the Dockerfile'
+        required: false
+        type: string
+        default: Dockerfile
+      TECH_TEAM_NAMESPACE:
+        description: 'Tech team namespace for the image'
+        required: false
+        type: string
+        default: kernel
+      IMAGE_NAME:
+        description: 'Name of the image to be built'
+        required: false
+        type: string
+        default: kmake-image
+      IMAGE_TAG:
+        description: 'Docker image tag to use for the build'
+        required: false
+        type: string
+        default: ver.1.0
+
+jobs:
+  build-and-push:
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    env:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      AWS_REGION: us-west-2
+      ENVIRONMENT_VALUE: prod
+    steps:
+      - name: Parse inputs
+        run: |
+          echo "GIT_REPO_URL=${{ inputs.GIT_REPO_URL }}" >> $GITHUB_ENV
+          echo "DOCKERFILE_PATH=${{ inputs.DOCKERFILE_PATH }}" >> $GITHUB_ENV
+          echo "IMAGE_REF=${{ inputs.TECH_TEAM_NAMESPACE }}/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}" >> $GITHUB_ENV
+          echo "REPO_NAME=${{ inputs.TECH_TEAM_NAMESPACE }}/${{ inputs.IMAGE_NAME }}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        run: |
+          git clone "$GIT_REPO_URL" repo
+
+      - name: Build Docker image
+        working-directory: repo
+        run: |
+          docker build -f "$DOCKERFILE_PATH" \
+            -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REF" .
+
+      - name: Authenticate with AWS ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin \
+              "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+      - name: Ensure ECR repository exists
+        run: |
+          if ! aws ecr describe-repositories \
+            --repository-names "$REPO_NAME" \
+            --region "$AWS_REGION" \
+            --registry-id "$AWS_ACCOUNT_ID" >/dev/null 2>&1; then
+              echo "Repository not found, creating..."
+              aws ecr create-repository \
+                --region "$AWS_REGION" \
+                --registry-id "$AWS_ACCOUNT_ID" \
+                --repository-name "$REPO_NAME" \
+                --tags Key=environment,Value="$ENVIRONMENT_VALUE"
+          else
+              echo "Repository $TECH_TEAM_NAMESPACE/$IMAGE_NAME already exists, skipping creation."
+          fi
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REF"
