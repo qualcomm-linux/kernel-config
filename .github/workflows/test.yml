@@ -30,6 +30,16 @@ on:
         type: string
         required: true
 
+      branch:
+        description: Kernel branch name
+        type: string
+        required: true
+
+      pr_number:
+        description: PR number
+        type: string
+        required: true
+
 jobs:
   test:
     runs-on:
@@ -86,6 +96,8 @@ jobs:
           docker_image: ${{ inputs.docker_image }}
           kernel_version: ${{ inputs.kernel_version }}
           commit_SHA: ${{ inputs.commit_SHA }}
+          branch: ${{ inputs.branch }}
+          pr_number: ${{ inputs.pr_number }}
         env:
           FIRMWARE: ${{ matrix.build_matrix.firmware }}
           MACHINE: ${{ matrix.build_matrix.machine }}

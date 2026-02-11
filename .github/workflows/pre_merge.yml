@@ -73,6 +73,8 @@ jobs:
       full_matrix: ${{ needs.loading.outputs.full_matrix }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       commit_SHA: ${{ inputs.sha }}
+      branch: ${{ inputs.ref }}
+      pr_number: ${{ inputs.pr }}
 
   comment:
     needs: [test]

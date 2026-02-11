@@ -10,6 +10,12 @@ inputs:
   commit_SHA:
     description: Kernel commit
     required: true
+  branch:
+    description: Kernel branch name
+    required: true
+  pr_number:
+    description: PR number
+    required: true
 
 runs:
   using: "composite"
@@ -134,9 +140,13 @@ runs:
           -e major="$major" \
           -e patchlevel="$patchlevel" \
           -e extra="$extra" \
+          -e branch="${{ inputs.branch }}" \
+          -e pr_number="${{ inputs.pr_number }}" \
           ${{ inputs.docker_image }} \
           jq '
-            .data.kernel_revision.describe = env.kernel_version
+              .id = env.commit_SHA
+            | .name = "kernel-qli"
+            | .data.kernel_revision.describe = ("PR:"+env.pr_number + ", Branch:" + env.branch + ", Kernel Version:" + env.kernel_version)
             | .data.kernel_revision.commit_tags = [env.commit_tag]
             | .data.kernel_revision.commit = env.commit_SHA
             | .data.kernel_revision.version.version = (env.major | tonumber)
