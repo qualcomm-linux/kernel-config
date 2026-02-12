@@ -1,0 +1,87 @@
+name: Checker Override
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number
+        type: string
+        required: true
+      repo:
+        description: Target repository
+        type: string
+        required: true
+      reason:
+        description: Reason for override
+        type: string
+        required: true
+
+jobs:
+  extract-pr-metadata:
+    name: Extract PR Data
+    runs-on: ubuntu-latest
+    outputs:
+      pr_sha: ${{ steps.capture.outputs.pr_sha }}
+      pr_branch: ${{ steps.capture.outputs.pr_branch }}
+
+    steps:
+      - name: Capture PR metadata
+        id: capture
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ inputs.pr_number }};
+            const full = "${{ inputs.repo }}";
+            const [owner, repo] = full.split("/");
+
+            // Fetch PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            const prSha = pr.head.sha;         // commit SHA of PR head
+            const prBranch = pr.base.ref;      // source branch name
+
+            core.setOutput('pr_sha', prSha);
+            core.setOutput('pr_branch', prBranch);
+
+      - name: Show values (for logs)
+        run: |
+          echo "PR number:  ${{ inputs.pr_number }}"
+          echo "PR SHA:     ${{ steps.capture.outputs.pr_sha }}"
+          echo "PR Branch:  ${{ steps.capture.outputs.pr_branch }}"
+
+  check_run:
+    runs-on: ubuntu-latest
+    needs: [extract-pr-metadata]
+    steps:
+      - name: Post check run
+        if: ${{ needs.extract-pr-metadata.outputs.pr_branch == 'qcom-6.18.y' }}
+        uses: qualcomm-linux/kernel-config/.github/actions/check_run@main
+        with:
+          sha: ${{ needs.extract-pr-metadata.outputs.pr_sha }}
+          repo: ${{ inputs.repo }}
+          APPID: ${{ secrets.APPID }}
+          PVK: ${{ secrets.PVK }}
+          workflow_name: "Kernel Checkers"
+
+      - name: Print Log
+        env:
+          PR_BRANCH: ${{ needs.extract-pr-metadata.outputs.pr_branch }}
+          TOKEN: ${{ secrets.PAT }}
+        run: |
+          if [ "$PR_BRANCH" = "qcom-6.18.y" ]; then
+            echo "Checker Override for branch qcom-6.18.y"
+
+            curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.PAT }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ inputs.repo }}/issues/${{ inputs.pr_number }}/comments \
+            -d '{"body":"Kernel Checker override by ${{ github.actor }} for SHA : ${{  needs.extract-pr-metadata.outputs.pr_sha }}\n Reason: ${{ inputs.reason }}"}'
+
+          else
+            echo "Branch not applicable for override.."
+          fi
