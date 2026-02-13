@@ -81,6 +81,16 @@ on:
               - type: required
                 message: Kernel Checker GitHub Workflow ID is required
 
+      workflow.preflight.id:
+        type: number
+        required: false
+        default: 0
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Preflight checks GitHub Workflow ID
+            description: ID of the Preflight checks GitHub Workflow to be executed
+
       workflow.ubuntu.id:
         type: number
         required: false
