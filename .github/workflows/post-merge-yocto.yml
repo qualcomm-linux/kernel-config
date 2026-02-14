@@ -17,10 +17,6 @@ on:
         description: Target repository
         type: string
         required: true
-      kernel_ver:
-        description: Kernel version
-        type: string
-        required: true
 
 jobs:
   init-status:
@@ -62,10 +58,9 @@ jobs:
     secrets: inherit
     with:
       repo: ${{ github.event.inputs.repo || 'qualcomm-linux/kernel' }}
-      ref: ${{ github.event.inputs.ref || 'qcom-next' }}
+      ref: ${{ github.event.inputs.ref || 'qcom-next-staging' }}
       SHA: ${{ github.event.inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
-      kernel_ver: ${{ github.event.inputs.kernel_ver }}
 
   check_run:
     runs-on: ubuntu-latest

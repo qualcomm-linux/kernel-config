@@ -21,10 +21,6 @@ on:
         description: 'Rootfs matrix for Yocto Parallel builds'
         required: true
         type: string
-      kernel_ver:
-        description: Kernel version
-        type: string
-        required: true
     outputs:
       artifacts_location:
         description: 'Artifacts Upload location'
@@ -75,10 +71,10 @@ jobs:
           workspace_path: ${{ github.workspace }}
           s3_bucket: qli-prd-kernel-gh-artifacts
           rootfs: ${{ matrix.rootfs_matrix.rootfs }}
-          kernel_ver: ${{ inputs.kernel_ver }}
           sha: ${{ inputs.sha }}
           CACHE_DIR : ${CACHE_DIR}
           kas: ${{ env.KAS_CONTAINER }}
+          branch: ${{ inputs.ref }}
         env:
           token: ${{ secrets.PAT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

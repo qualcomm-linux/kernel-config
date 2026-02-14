@@ -12,9 +12,6 @@ inputs:
   rootfs:
     description: rootfs name
     required: true
-  kernel_ver:
-    description: Kernel version on which CI is running
-    required: true
   sha:
     description: SHA of kernel, on which CI will run
     required: true
@@ -22,6 +19,9 @@ inputs:
     description: Cache directory
     required: true
   kas:
+    required: true
+  branch:
+    description: Branch name
     required: true
 
 outputs:
@@ -46,14 +46,12 @@ runs:
         rootfs=${{ inputs.rootfs }}
         build_dir="$workspace/../$rootfs"
         sha=${{ inputs.sha }}
-        kernel_ver=${{ inputs.kernel_ver }}
 
         echo "workspace=${{ inputs.workspace_path }}" >> $GITHUB_ENV
         echo "s3_bucket=${{ inputs.s3_bucket }}" >> $GITHUB_ENV
         echo "build_dir=$build_dir" >> $GITHUB_ENV
         echo "sha=${{ inputs.sha }}" >> $GITHUB_ENV
         echo "rootfs=${{ inputs.rootfs }}" >> $GITHUB_ENV
-        echo "kernel_ver=${{ inputs.kernel_ver }}" >> $GITHUB_ENV
 
         echo "LOGFILE=${{ github.workspace }}/build-logs.log" >> "$GITHUB_ENV"
 
@@ -72,13 +70,21 @@ runs:
       run: |
         set -ex
         cd ${{ env.build_dir }}
-        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/${{ inputs.kernel_ver }}/kas-build-${{ env.rootfs }}.yml .
-        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/${{ inputs.kernel_ver }}/kernel-override.yml .
-        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/${{ inputs.kernel_ver }}/build_id.txt .
+
+        branch="${{ inputs.branch }}"
+        if [ "$branch" == "qcom-6.18.y" ]; then
+          kernel_ver="6.18"
+        else
+          kernel_ver="mainline"
+        fi
 
         kernel_sha="${{ env.sha }}"
         echo "SHA : $kernel_sha"
-        kernel_ver="${{ env.kernel_ver }}"
+        echo "kernel_ver : $kernel_ver"
+        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/kas-build-${{ env.rootfs }}.yml .
+        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/kernel-override.yml .
+        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/build_id.txt .
+
         if [[ $kernel_ver == "6.18" ]]; then
           sed -i "s/SRCREV:pn-linux-qcom = \"[^\"]*\"/SRCREV:pn-linux-qcom = \"$kernel_sha\"/" kernel-override.yml
         else
