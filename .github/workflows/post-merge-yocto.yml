@@ -3,7 +3,7 @@ name: post_merge_yocto
 run-name: Compile Yocto Build
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       sha:
         description: Head sha on which Build needs to be triggered
@@ -26,10 +26,10 @@ jobs:
       - name: Set Status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
-          sha: ${{ github.event.inputs.sha || github.sha }}
+          sha: ${{ inputs.sha }}
           action_mode: start
           check_name: "Yocto Build Generation"
-          repo: ${{ github.event.inputs.repo || github.repository }}
+          repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
 
   init:
@@ -40,10 +40,10 @@ jobs:
       - name: Update Summary
         run: |
           echo "## Yocto Build Generation" >> $GITHUB_STEP_SUMMARY
-          echo "- Pull Request Number: \`${{ github.event.inputs.pr || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Head Commit SHA: \`${{ github.event.inputs.sha || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Target Branch: \`${{ github.event.inputs.ref || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Target Repository: \`${{ github.event.inputs.repo || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Pull Request Number: \`${{ inputs.pr || 'Nightly Build on Tip' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Head Commit SHA: \`${{ inputs.sha || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Target Branch: \`${{ inputs.ref || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Target Repository: \`${{ inputs.repo || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
 
   loading:
     name: Load Parameters
@@ -57,9 +57,9 @@ jobs:
     uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
     secrets: inherit
     with:
-      repo: ${{ github.event.inputs.repo || 'qualcomm-linux/kernel' }}
-      ref: ${{ github.event.inputs.ref || 'qcom-next-staging' }}
-      SHA: ${{ github.event.inputs.sha }}
+      repo: ${{ inputs.repo || 'qualcomm-linux/kernel' }}
+      ref: ${{ inputs.ref || 'qcom-next-staging' }}
+      SHA: ${{ inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
 
   check_run:
@@ -85,8 +85,8 @@ jobs:
       - name: Set final status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
-          sha: ${{ github.event.inputs.sha || github.sha }}
+          sha: ${{ inputs.sha }}
           action_mode: ${{ needs.build_yocto.result }}
           check_name: "Yocto Build Generation"
-          repo: ${{ github.event.inputs.repo || github.repository }}
+          repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
