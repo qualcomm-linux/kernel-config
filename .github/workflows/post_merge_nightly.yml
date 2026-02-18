@@ -26,6 +26,7 @@ jobs:
   post_merge_yocto:
     needs: fetch_head_sha
     uses: ./.github/workflows/post-merge-yocto.yml
+    secrets: inherit
     with:
       sha: ${{ needs.fetch_head_sha.outputs.sha }}
       ref: "qcom-6.18.y"
