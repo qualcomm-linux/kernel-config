@@ -21,6 +21,10 @@ on:
         description: 'Rootfs matrix for Yocto Parallel builds'
         required: true
         type: string
+      base:
+        description: base build or tip
+        type: string
+        required: true
     outputs:
       artifacts_location:
         description: 'Artifacts Upload location'
@@ -34,6 +38,8 @@ jobs:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    outputs:
+      kernel_yaml: ${{ steps.set-kernel-yaml.outputs.kernel_yaml }}
     steps:
       - name: Update kas-container
         run: |
@@ -48,6 +54,18 @@ jobs:
         with:
           name: kas-container
           path: ${{ env.KAS_CONTAINER }}
+
+      - name : Finalize Kernel Yaml
+        id: set-kernel-yaml
+        shell: bash
+        run: |
+          ref="${{ inputs.ref }}"
+          if [[ "$ref" == "qcom-6.18.y" ]]; then
+            kernel_yaml="linux-qcom-6.18"
+          else
+            kernel_yaml="linux-qcom-next"
+          fi
+          echo "kernel_yaml=$kernel_yaml" >> "$GITHUB_OUTPUT"
 
   compile_yocto:
     needs: kas-setup
@@ -75,6 +93,8 @@ jobs:
           CACHE_DIR : ${CACHE_DIR}
           kas: ${{ env.KAS_CONTAINER }}
           branch: ${{ inputs.ref }}
+          base: ${{ inputs.base }}
+          kernel_yaml: ${{ needs.kas-setup.outputs.kernel_yaml }}
         env:
           token: ${{ secrets.PAT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

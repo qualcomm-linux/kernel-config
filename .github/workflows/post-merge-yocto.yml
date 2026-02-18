@@ -17,6 +17,10 @@ on:
         description: Target repository
         type: string
         required: true
+      base:
+        description: base build or tip
+        type: string
+        required: true
 
 jobs:
   init-status:
@@ -44,6 +48,7 @@ jobs:
           echo "- Head Commit SHA: \`${{ inputs.sha || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Target Branch: \`${{ inputs.ref || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Target Repository: \`${{ inputs.repo || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Base: \`${{ inputs.base || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
 
   loading:
     name: Load Parameters
@@ -61,6 +66,7 @@ jobs:
       ref: ${{ inputs.ref || 'qcom-next-staging' }}
       SHA: ${{ inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
+      base: ${{ inputs.base }}
 
   check_run:
     runs-on: ubuntu-latest
