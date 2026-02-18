@@ -23,6 +23,15 @@ inputs:
   branch:
     description: Branch name
     required: true
+  base:
+    description: base build or tip
+    type: string
+    required: true
+    default: ""
+  kernel_yaml:
+    description: Kernel Yaml to build
+    type: string
+    required: true
 
 outputs:
   artifacts_location:
@@ -52,6 +61,7 @@ runs:
         echo "build_dir=$build_dir" >> $GITHUB_ENV
         echo "sha=${{ inputs.sha }}" >> $GITHUB_ENV
         echo "rootfs=${{ inputs.rootfs }}" >> $GITHUB_ENV
+        echo "base=${{ inputs.base }}" >> $GITHUB_ENV
 
         echo "LOGFILE=${{ github.workspace }}/build-logs.log" >> "$GITHUB_ENV"
 
@@ -64,9 +74,8 @@ runs:
         aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
 
-    - name: Setup Kas Environment
+    - name: Set Kernel Version
       shell: bash
-      id: download_kas
       run: |
         set -ex
         cd ${{ env.build_dir }}
@@ -77,19 +86,22 @@ runs:
         else
           kernel_ver="mainline"
         fi
+        echo "kernel_ver=$kernel_ver" >> $GITHUB_ENV
 
+    - name: Set Kernel override
+      shell: bash
+      run : |
+        cd ${{ env.build_dir }}
+        aws s3 cp s3://${{ env.s3_bucket }}/meta-qcom/kas_files/$kernel_ver/kernel-override.yml .
+        kernel_ver="${{ env.kernel_ver }}"
         kernel_sha="${{ env.sha }}"
-        echo "SHA : $kernel_sha"
-        echo "kernel_ver : $kernel_ver"
-        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/kas-build-${{ env.rootfs }}.yml .
-        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/kernel-override.yml .
-        aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/build_id.txt .
-
-        if [[ $kernel_ver == "6.18" ]]; then
+        echo "Kernel SHA : $kernel_sha"
+        if [[ "$kernel_ver" == "6.18" ]]; then
           sed -i "s/SRCREV:pn-linux-qcom = \"[^\"]*\"/SRCREV:pn-linux-qcom = \"$kernel_sha\"/" kernel-override.yml
         else
           sed -i "s/SRCREV:pn-linux-qcom-next = \"[^\"]*\"/SRCREV:pn-linux-qcom-next = \"$kernel_sha\"/" kernel-override.yml
         fi
+        cat kernel-override.yml
 
     - name: Download kas-container
       uses: actions/download-artifact@v6
@@ -114,9 +126,20 @@ runs:
         ls -la
         export KAS_WORK_DIR=$PWD/kas
         echo $KAS_WORK_DIR
-        git clone https://gitlab.freedesktop.org/glvnd/libglvnd -b master
-        ls -la
-        $KAS_CONTAINER build kas-build-${{ env.rootfs }}.yml:kernel-override.yml
+        base="${{ inputs.base }}"
+        kernel_ver="${{ env.kernel_ver }}"
+
+        if [[ "$base" == "tip" ]]; then
+          git clone https://github.com/qualcomm-linux/meta-qcom.git
+          cp kernel-override.yml meta-qcom/ci/
+          meta_qcom_sha=$(git -C meta-qcom rev-parse HEAD)
+          echo $meta_qcom_sha > build_id.txt
+          $KAS_CONTAINER build meta-qcom/ci/${{ env.rootfs }}.yml:meta-qcom/ci/${{ inputs.kernel_yaml }}.yml:meta-qcom/ci/qcom-distro-prop-image.yml:meta-qcom/ci/kernel-override.yml
+        else
+          aws s3 cp s3://${{ env.s3_bucket }}/meta-qcom/kas_files/${{ env.kernel_ver }}/kas-build-${{ env.rootfs }}.yml .
+          aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/build_id.txt .
+          $KAS_CONTAINER build kas-build-${{ env.rootfs }}.yml:kernel-override.yml
+        fi
 
     - name: Prepare file list for log upload
       if: always()
@@ -140,7 +163,10 @@ runs:
         
         echo "${{ env.build_dir }}/${{ env.rootfs }}-rootfs.tar.gz" >> ${{ github.workspace }}/file_list.txt
         echo "${{ env.build_dir }}/${{ env.rootfs }}-rootfs-prop.tar.gz" >> ${{ github.workspace }}/file_list.txt
-        echo "${{ env.build_dir }}/build_id.txt" >> ${{ github.workspace }}/file_list.txt
+        cd ${{ env.build_dir }}
+        if [ -f build_id.txt ]; then
+          echo "${{ env.build_dir }}/build_id.txt" >> ${{ github.workspace }}/file_list.txt
+        fi
 
     - name: Upload artifacts to S3
       if: always()
