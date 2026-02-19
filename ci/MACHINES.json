@@ -47,7 +47,7 @@
   "monaco-evk": {
     "machine": "monaco-evk",
     "firmware": "qcs8300-ride",
-    "lavaname": "",
+    "lavaname": "monaco-evk",
     "target": "monaco-evk",
     "buildid": "QCS8300.LE.1.0-00137-STD.PROD-1",
     "firmwareid": "qcs8300-ride",
