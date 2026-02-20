@@ -58,15 +58,14 @@ jobs:
   build_yocto:
     name: Build Yocto
     needs: [init-status, init, loading]
-    uses: qualcomm-linux/kernel-config/.github/workflows/yocto-build.yml@main
+    uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
     secrets: inherit
     with:
-      docker_image: kmake-image:ver.1.0
-      repo: ${{ github.event.inputs.repo || 'qualcomm-linux/kernel' }}
-      ref: ${{ github.event.inputs.ref || 'qcom-next' }}
-      pr: ${{ github.event.inputs.pr || '' }}
-      sha: ${{ github.event.inputs.sha }}
+      repo: ${{ inputs.repo || 'qualcomm-linux/kernel' }}
+      ref: ${{ inputs.ref || 'qcom-next-staging' }}
+      sha: ${{ inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
+      base: "tip"
 
   check_run:
     runs-on: ubuntu-latest
