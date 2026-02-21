@@ -62,11 +62,11 @@
     "firmwareid": "qcs615-adp-air",
     "rootfs": "qcs615-ride"
   },
-  "kaanapali-qrd": {
-    "machine": "kaanapali-qrd",
+  "kaanapali-mtp": {
+    "machine": "kaanapali-mtp",
     "firmware": "",
-    "lavaname": "kaanapali-qrd",
-    "target": "kaanapali-qrd",
+    "lavaname": "kaanapali-mtp",
+    "target": "kaanapali-mtp",
     "buildid": "",
     "firmwareid": "",
     "rootfs": ""
