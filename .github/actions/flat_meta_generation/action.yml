@@ -1,10 +1,6 @@
 name: Flat Meta Generation
 
 inputs:
-  bootbins:
-    description: Boot bins for Flat META
-    type: string
-    required: true
   workspace_path:
     description: Workspace path
     required: true
@@ -14,90 +10,69 @@ inputs:
   docker_image:
     description: Docker image name
     required: true
+  rootfs_matrix:
+    description: Rootfs matrix
+    required: true
 
 runs:
   using: "composite"
   steps:
-    - name: Clone qcom-ptool
-      shell: bash
-      run: |
-        workspace="${{ inputs.workspace_path }}"
-        cd "$workspace/.."
-        git clone https://github.com/qualcomm-linux/qcom-ptool.git
-
     - name: Create Flat META
       shell: bash
       run: |
+        set -x
         workspace="${{ inputs.workspace_path }}"
-        bootbins='${{ inputs.bootbins }}'
         s3_bucket="${{ inputs.s3_bucket }}"
         docker_image="${{ inputs.docker_image }}"
+        rootfs_matrix='${{ inputs.rootfs_matrix }}'
 
-        echo "$bootbins"
-
-        for row in $(echo "$bootbins" | jq -c '.[]'); do
-          target=$(echo "$row" | jq -r '.target')
-          buildid=$(echo "$row" | jq -r '.buildid')
+        for row in $(echo "$rootfs_matrix" | jq -c '.[]'); do
+          machine=$(echo "$row" | jq -r '.machine')
+          rootfs=$(echo "$row" | jq -r '.rootfs')
           firmwareid=$(echo "$row" | jq -r '.firmwareid')
 
-          echo "Target : $target"
-          echo "Build ID : $buildid"
+          echo "Target : $machine"
+          echo "Rootfs ID : $rootfs"
           echo "Firmware ID : $firmwareid"
           echo "-----------------------------"
 
-          if [ -z "$buildid" ]; then
-            echo "No Build Id for $target, skip generating Flat Build."
+          if [ -z "$rootfs" ]; then
+            echo "No Rootfs present for $target, skip generating Flat Build."
             continue
           fi
 
-          platform=$(echo "$buildid" | cut -d '.' -f1)
-          build_dir="$workspace/../flatbuild-$platform"
-          boot_dir="$build_dir/${platform}_bootbinaries"
+          build_dir="$workspace/../flatbuild-$rootfs"
+          meta_dir="$build_dir/qcom-multimedia-image-${rootfs}.rootfs.qcomflash"
+
           artifacts_dir="$build_dir/artifacts"
 
           mkdir -p "$build_dir"
           cd "$build_dir"
-
-          aws s3 cp "s3://$s3_bucket/$buildid/${platform}_bootbinaries.zip" .
-          aws s3 cp "s3://$s3_bucket/$buildid/contents.zip" .
+          aws s3 cp s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz .
           
-          unzip -o "${platform}_bootbinaries.zip"
-          unzip -o contents.zip
+          mkdir -p $meta_dir
+          tar -xzf qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz --strip-components=1 -C $meta_dir
 
-          docker run -i --rm \
-            --user "$(id -u):$(id -g)" \
-            --workdir="$PWD" \
-            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            -e workspace="$workspace" \
-            -e platform="$platform" \
-            "$docker_image" bash -c "
-              python3 \$workspace/../qcom-ptool/ptool.py \
-              -x \${platform}_bootbinaries/partition_ufs.xml \
-              -t \${platform}_bootbinaries/
-            "
-
-          cp "$build_dir/contents/contents.xml" "${platform}_bootbinaries/"
-          cd "$boot_dir"
-          rm -rf rawprogram{0..5}_*
-          sed -i '/system.img/d' rawprogram0.xml
+          cd "$meta_dir"
+          sed -i '/rootfs.img/d' rawprogram0.xml
 
           mkdir -p "$artifacts_dir"
           cd "$artifacts_dir"
 
-          aws s3 cp "s3://$s3_bucket/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
+          aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
 
           if [ -n "$firmwareid" ]; then
             gunzip -c initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz > kerneltest.cpio
-            aws s3 cp "s3://$s3_bucket/meta-qcom/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
+            aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
             gunzip -c initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz > firmware.cpio
-            cat kerneltest.cpio firmware.cpio > initramfs-$target.cpio
-            gzip initramfs-$target.cpio
+            cat kerneltest.cpio firmware.cpio > initramfs-$machine.cpio
+            gzip initramfs-$machine.cpio
           else
-            echo "Firmware not available for Target : $target"
-            mv initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz initramfs-$target.cpio.gz
+            echo "Firmware not available for Target : $machine"
+            mv initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz initramfs-$machine.cpio.gz
           fi
 
-          (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/initramfs-$target.cpio.gz")
+          (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/initramfs-$machine.cpio.gz")
 
           wget -O systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb
           dpkg-deb -xv systemd-boot-efi.deb systemd
@@ -107,10 +82,10 @@ runs:
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            -e target="$target" \
+            -e machine="$machine" \
             "$docker_image" bash -c '
               generate_boot_bins.sh efi \
-                --ramdisk artifacts/initramfs-$target.cpio.gz \
+                --ramdisk artifacts/initramfs-$machine.cpio.gz \
                 --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
                 --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
                 --linux ../kobj/arch/arm64/boot/Image \
@@ -124,12 +99,11 @@ runs:
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
             "$docker_image" bash -c "
               generate_boot_bins.sh dtb \
-                --input ../kobj/arch/arm64/boot/dts/qcom/$target.dtb \
+                --input ../kobj/arch/arm64/boot/dts/qcom/$machine.dtb \
                 --output images
             "
 
-          cp "$build_dir/images/efi.bin" "$boot_dir"
-          cp "$build_dir/images/dtb.bin" "$boot_dir"
-          mv "${platform}_bootbinaries/" "${target}_bootbinaries/"
-          tar -czvf "$workspace/${target}_bootbinaries.tar.gz" "${target}_bootbinaries/"
+          cp "$build_dir/images/efi.bin" "$meta_dir"
+          cp "$build_dir/images/dtb.bin" "$meta_dir"
+          tar -czvf "$workspace/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz" "qcom-multimedia-image-${rootfs}.rootfs.qcomflash/"
         done
