@@ -43,11 +43,10 @@ jobs:
     secrets: inherit
     with:
       docker_image: kmake-image:ver.1.0
-      build_matrix: ${{ needs.loading.outputs.build_matrix }}
       pr_number: ${{ inputs.pr }}
       branch: ${{ inputs.ref }}
-      bootbins: ${{ needs.loading.outputs.bootbins }}
       repo: ${{ inputs.repo }}
+      rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
 
   check_run:
     runs-on: ubuntu-latest

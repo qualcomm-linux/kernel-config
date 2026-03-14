@@ -6,10 +6,6 @@ on:
         description: Docker image
         type: string
         required: true
-      build_matrix:
-        description: Build matrix for multi target builds
-        type: string
-        required: true
       pr_number:
         description: PR number
         type: string
@@ -18,12 +14,12 @@ on:
         description: Branch name
         type: string
         required: false
-      bootbins:
-        description: Boot bins for Flat META
-        type: string
-        required: true
       repo:
         description: Target repository
+        type: string
+        required: true
+      rootfs_matrix:
+        description: Rootfs matrix
         type: string
         required: true
 
@@ -78,6 +74,7 @@ jobs:
           bootbins: ${{ inputs.bootbins }}
           workspace_path: ${{ steps.sync.outputs.workspace_path }}
           s3_bucket: qli-prd-kernel-gh-artifacts
+          rootfs_matrix: ${{inputs.rootfs_matrix }}
 
       - name: Create file list for artifacts upload
         run: |
@@ -91,21 +88,18 @@ jobs:
           echo "$workspace/../kobj/arch/arm64/boot/Image" >> $workspace/../artifacts/file_list.txt
           echo "$workspace/../kobj/vmlinux" >> $workspace/../artifacts/file_list.txt
 
-          # Loop through all machines from the build_matrix input
-          machines='${{ inputs.build_matrix }}'
+          # Loop through all machines from the rootfs_matrix input
+          machines='${{ inputs.rootfs_matrix }}'
           for machine in $(echo "$machines" | jq -r '.[].machine'); do
             echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}.dtb" >> $workspace/../artifacts/file_list.txt
           done
 
-          # Loop through all bootbins and add flat meta to the list
-          bootbins='${{ inputs.bootbins }}'
-          for row in $(echo "$bootbins" | jq -c '.[]'); do
-            buildid=$(echo "$row" | jq -r '.buildid')
-            target=$(echo "$row" | jq -r '.target')
-            echo "target : $target"
-            echo "BuildId : $buildid"
-            platform=$(echo "$buildid" | cut -d '.' -f1)
-            echo "$workspace/"$target"_bootbinaries.tar.gz" >> $workspace/../artifacts/file_list.txt
+          # Loop through all rootfs_matrix and add flat meta to the list
+          rootfs_matrix='${{ inputs.rootfs_matrix }}'
+          for row in $(echo "$rootfs_matrix" | jq -c '.[]'); do
+            machine=$(echo "$row" | jq -r '.machine')
+            rootfs=$(echo "$row" | jq -r '.rootfs')
+            echo $workspace/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz >> $workspace/../artifacts/file_list.txt
           done
 
       - name: Configure AWS
