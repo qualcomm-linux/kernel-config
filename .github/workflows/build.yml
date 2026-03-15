@@ -71,7 +71,6 @@ jobs:
         uses: qualcomm-linux/kernel-config/.github/actions/flat_meta_generation@main
         with:
           docker_image: ${{ inputs.docker_image }}
-          bootbins: ${{ inputs.bootbins }}
           workspace_path: ${{ steps.sync.outputs.workspace_path }}
           s3_bucket: qli-prd-kernel-gh-artifacts
           rootfs_matrix: ${{inputs.rootfs_matrix }}
