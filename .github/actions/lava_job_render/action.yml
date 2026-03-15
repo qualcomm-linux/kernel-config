@@ -16,6 +16,9 @@ inputs:
   pr_number:
     description: PR number
     required: true
+  flash_type:
+    description: Flash method to use QDL or fastboot
+    required: false
 
 runs:
   using: "composite"
@@ -23,10 +26,16 @@ runs:
     - name: Process presigned_urls.json
       id: process_urls
       uses: actions/github-script@v7
+      env:
+        FLASH_TYPE: ${{ inputs.flash_type }}
       with:
         script: |
           const fs = require('fs');
           const p = require('path');
+          let filePath;
+
+          const flashType = (process.env.FLASH_TYPE || 'qdl').toLowerCase();
+          console.log(`Flash type: ${flashType}`);
           // Helper function to find URL by filename
           function findUrlByFilename(filename) {
             for (const [path, url] of Object.entries(data)) {
@@ -45,21 +54,43 @@ runs:
           }
           // Read the JSON file
           const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-          // Extract URLs into variables
-          const modulesTarUrl = findUrlByFilename('modules.tar.xz');
-          const imageUrl = findUrlByFilename('Image');
-          const vmlinuxUrl = findUrlByFilename('vmlinux');
-          const dtbFilename = `${process.env.MACHINE}.dtb`;
-          const dtbUrl = findUrlByFilename(dtbFilename);
-          // Set outputs
-          core.setOutput('modules_url', modulesTarUrl);
-          core.setOutput('image_url', imageUrl);
-          core.setOutput('vmlinux_url', vmlinuxUrl);
-          core.setOutput('dtb_url', dtbUrl);
-          console.log(`Modules URL: ${modulesTarUrl}`);
-          console.log(`Image URL: ${imageUrl}`);
-          console.log(`Vmlinux URL: ${vmlinuxUrl}`);
-          console.log(`Dtb URL: ${dtbUrl}`);
+
+          if (flashType == 'fastboot') {
+            // Extract URLs into variables
+            const modulesTarUrl = findUrlByFilename('modules.tar.xz');
+            const imageUrl = findUrlByFilename('Image');
+            const vmlinuxUrl = findUrlByFilename('vmlinux');
+            const dtbFilename = `${process.env.MACHINE}.dtb`;
+            const dtbUrl = findUrlByFilename(dtbFilename);
+             // Set outputs
+            core.setOutput('modules_url', modulesTarUrl);
+            core.setOutput('image_url', imageUrl);
+            core.setOutput('vmlinux_url', vmlinuxUrl);
+            core.setOutput('dtb_url', dtbUrl);
+
+            console.log(`Modules URL: ${modulesTarUrl}`);
+            console.log(`Image URL: ${imageUrl}`);
+            console.log(`Vmlinux URL: ${vmlinuxUrl}`);
+            console.log(`Dtb URL: ${dtbUrl}`);
+
+          } else if (flashType === 'qdl') {
+
+            const dtbFilename = `${process.env.MACHINE}.dtb`;
+            const dtbUrl = findUrlByFilename(dtbFilename);
+            rootfs_name = `qcom-multimedia-image-${process.env.rootfs}.rootfs.qcomflash.tar.gz`;
+            core.setOutput('rootfs_name', rootfs_name);
+            const rootfsurl = findUrlByFilename(rootfs_name);
+
+            core.setOutput('rootfsurl', rootfsurl);
+            core.setOutput('dtb_url', dtbUrl);
+
+            console.log(`rootfs_name URL: ${rootfs_name}`);
+            console.log(`rootfsurl URL: ${rootfsurl}`);
+            console.log(`Dtb URL: ${dtbUrl}`);
+          } else {
+            core.setFailed(`Invalid flash_type '${flashType}'. Allowed: qdl, fastboot`);
+            return;
+          }
 
     - name: Create metadata.json
       id: create_metadata
@@ -86,54 +117,27 @@ runs:
 
     - name: Create template json
       shell: bash
+      env:
+        FLASH_TYPE: ${{ inputs.flash_type }}
       run: |
+        flash_type="${FLASH_TYPE:-qdl}"
+        flash_type="$(echo "$flash_type" | tr '[:upper:]' '[:lower:]')"
+        echo "Flash type: $flash_type"
+
         major=$(echo "${{ inputs.kernel_version }}" | cut -d. -f1)
         patchlevel=$(echo "${{ inputs.kernel_version }}" | cut -d. -f2 | cut -d- -f1)
         extra=$(echo "${{ inputs.kernel_version }}" | grep -o '\-.*' || echo null)
         echo "Creating job definition"
         metadata_url="${{ steps.upload_metadata.outputs.presigned_url }}"
-        vmlinux_url="${{ steps.process_urls.outputs.vmlinux_url }}"
-        image_url="${{ steps.process_urls.outputs.image_url }}"
-        modules_url="${{ steps.process_urls.outputs.modules_url }}"
+
         # Create the job definition using the processed URLs
         cd ../job_render
-        # using metadata_url
-        docker run -i --rm \
-          --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e metadata_url="$metadata_url" \
-          ${{ inputs.docker_image }} \
-          jq '.artifacts.metadata = env.metadata_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
-        # using image_url
-        docker run -i --rm \
-        --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e image_url="$image_url" \
-          ${{ inputs.docker_image }} \
-          jq '.artifacts.kernel = env.image_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
-        # using vmlinux_url
-        docker run -i --rm \
-          --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e vmlinux_url="$vmlinux_url" \
-          ${{ inputs.docker_image }} \
-          jq '.artifacts.vmlinux = env.vmlinux_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
-        # using modules_url
-        docker run -i --rm \
-          --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e modules_url="$modules_url" \
-          ${{ inputs.docker_image }} \
-          jq '.artifacts.modules = env.modules_url' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
         # Update kernel version
         docker run -i --rm \
           --user "$(id -u):$(id -g)" \
           --workdir="$PWD" \
           -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          -e metadata_url="$metadata_url" \
           -e kernel_version="v${{ inputs.kernel_version }}" \
           -e commit_tag="${{ inputs.kernel_version}}" \
           -e commit_SHA="${{ inputs.commit_SHA }}" \
@@ -144,7 +148,8 @@ runs:
           -e pr_number="${{ inputs.pr_number }}" \
           ${{ inputs.docker_image }} \
           jq '
-              .id = env.commit_SHA
+              .artifacts.metadata = env.metadata_url
+            | .id = env.commit_SHA
             | .name = "kernel-qli"
             | .data.kernel_revision.describe = ("PR:"+env.pr_number + ", Branch:" + env.branch + ", Kernel Version:" + env.kernel_version)
             | .data.kernel_revision.commit_tags = [env.commit_tag]
@@ -154,11 +159,43 @@ runs:
             | .data.kernel_revision.version.extra = env.extra
           ' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
 
+        if [[ "$flash_type" == "fastboot" ]]; then
+          vmlinux_url="${{ steps.process_urls.outputs.vmlinux_url }}"
+          image_url="${{ steps.process_urls.outputs.image_url }}"
+          modules_url="${{ steps.process_urls.outputs.modules_url }}"
+
+          docker run -i --rm \
+            --user "$(id -u):$(id -g)" \
+            --workdir="$PWD" \
+            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+            -e image_url="$image_url" \
+            -e vmlinux_url="$vmlinux_url" \
+            -e modules_url="$modules_url" \
+            ${{ inputs.docker_image }} \
+            jq '
+              .artifacts.kernel = env.image_url
+              | .artifacts.vmlinux = env.vmlinux_url
+              | .artifacts.modules = env.modules_url
+            ' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+
+        elif [[ "$flash_type" == "qdl" ]]; then
+          rootfsurl="${{ steps.process_urls.outputs.rootfsurl }}"
+          # using rootfs_url
+          docker run -i --rm \
+            --user "$(id -u):$(id -g)" \
+            --workdir="$PWD" \
+            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+            -e rootfsurl="$rootfsurl" \
+            ${{ inputs.docker_image }} \
+            jq '.artifacts.meta = env.rootfsurl' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+        fi
+
     - name: Update firmware and ramdisk
+      if: ${{ inputs.flash_type == 'fastboot' }}
       shell: bash
       run: |
         cd ../job_render
-        ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 7600)"
+        ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 604800)"
 
         # using ramdisk_url
         docker run -i --rm \
@@ -171,7 +208,7 @@ runs:
 
         # using firmware_url
         if [ -n "${{ env.FIRMWARE }}" ]; then
-          firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 7600)"
+          firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 604800)"
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
@@ -191,18 +228,38 @@ runs:
 
     - name: Create lava_job_definition
       shell: bash
+      env:
+        FLASH_TYPE: ${{ inputs.flash_type }}
       run: |
         cd ../job_render
         mkdir -p renders
 
-        docker run -i --rm \
-          --user "$(id -u):$(id -g)" \
-          --workdir="$PWD" \
-          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-          -e TARGET="${{ env.LAVA_NAME }}" \
-          -e TARGET_DTB="${{ env.MACHINE }}" \
-          ${{ inputs.docker_image }} \
-          sh -c 'export BOOT_METHOD=fastboot && \
-            export TARGET=${TARGET} && \
-            export TARGET_DTB=${TARGET_DTB} && \
-            python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
+        flash_type="${FLASH_TYPE:-qdl}"
+        flash_type="$(echo "$flash_type" | tr '[:upper:]' '[:lower:]')"
+        echo "Flash type: $flash_type"
+
+        if [[ "$flash_type" == "fastboot" ]]; then
+          docker run -i --rm \
+            --user "$(id -u):$(id -g)" \
+            --workdir="$PWD" \
+            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+            -e TARGET="${{ env.LAVA_NAME }}" \
+            -e TARGET_DTB="${{ env.MACHINE }}" \
+            ${{ inputs.docker_image }} \
+            sh -c 'export BOOT_METHOD=fastboot && \
+              export TARGET=${TARGET} && \
+              export TARGET_DTB=${TARGET_DTB} && \
+              python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
+        elif [[ "$flash_type" == "qdl" ]]; then
+          docker run -i --rm \
+            --user "$(id -u):$(id -g)" \
+            --workdir="$PWD" \
+            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+            -e TARGET="${{ env.LAVA_NAME }}" \
+            -e TARGET_DTB="${{ env.MACHINE }}" \
+            ${{ inputs.docker_image }} \
+            sh -c 'export BOOT_METHOD=flash && \
+              export TARGET=${TARGET} && \
+              export TARGET_DTB=${TARGET_DTB} && \
+              python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
+        fi

@@ -67,7 +67,7 @@ runs:
           // rootfs matrix: machine, rootfs
           const rootfs_matrix = Object.values(targets)
             .filter(({ rootfs }) => rootfs && rootfs.trim() !== '') // filter out empty or null in case Yocto Build is not enabled on a target
-            .map(({ machine, rootfs, firmwareid }) => ({ machine, rootfs, firmwareid }));
+            .map(({ machine, rootfs, firmwareid, lavaname }) => ({ machine, rootfs, firmwareid, lavaname }));
           core.setOutput('rootfs_matrix', JSON.stringify(rootfs_matrix));
           console.log("Rootfs Matrix:", rootfs_matrix);
 

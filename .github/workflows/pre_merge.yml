@@ -68,12 +68,13 @@ jobs:
     secrets: inherit
     with:
       docker_image: kmake-image:ver.1.0
-      build_matrix: ${{ needs.loading.outputs.build_matrix }}
-      full_matrix: ${{ needs.loading.outputs.full_matrix }}
+      rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       commit_SHA: ${{ inputs.sha }}
       branch: ${{ inputs.ref }}
       pr_number: ${{ inputs.pr }}
+      flash_type: "fastboot"
+      build_type: "kbdev"
 
   comment:
     needs: [test]
