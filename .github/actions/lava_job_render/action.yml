@@ -32,7 +32,6 @@ runs:
         script: |
           const fs = require('fs');
           const p = require('path');
-          let filePath;
 
           const flashType = (process.env.FLASH_TYPE || 'qdl').toLowerCase();
           console.log(`Flash type: ${flashType}`);
