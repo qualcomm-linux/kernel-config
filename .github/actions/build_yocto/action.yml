@@ -158,7 +158,7 @@ runs:
         cp "$TARGET" ${{ env.build_dir }}/${{ env.rootfs }}-rootfs.tar.gz
 
         LINK_PROP="qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz"
-        TARGET_PROP=$(readlink "$LINK")
+        TARGET_PROP=$(readlink "$LINK_PROP")
         cp "$TARGET_PROP" ${{ env.build_dir }}/${{ env.rootfs }}-rootfs-prop.tar.gz
         
         echo "${{ env.build_dir }}/${{ env.rootfs }}-rootfs.tar.gz" >> ${{ github.workspace }}/file_list.txt
