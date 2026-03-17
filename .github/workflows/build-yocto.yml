@@ -37,7 +37,7 @@ jobs:
   kas-setup:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
-      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+      labels: [self-hosted, kernel-prd-u24-sdk-x64-large-od-ephem]
     outputs:
       kernel_yaml: ${{ steps.set-kernel-yaml.outputs.kernel_yaml }}
     steps:
