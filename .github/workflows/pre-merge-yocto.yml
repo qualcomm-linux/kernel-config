@@ -21,6 +21,11 @@ on:
         description: Target repository
         type: string
         required: true
+      base:
+        description: base build or tip
+        type: string
+        default: tip
+        required: true
 
 jobs:
   init-status:
@@ -65,7 +70,7 @@ jobs:
       ref: ${{ inputs.ref || 'qcom-next-staging' }}
       sha: ${{ inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
-      base: "tip"
+      base: ${{ inputs.base }}
 
   check_run:
     runs-on: ubuntu-latest

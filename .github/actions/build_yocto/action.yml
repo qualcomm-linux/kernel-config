@@ -116,6 +116,25 @@ runs:
         echo "KAS_CONTAINER=$KAS_CONTAINER" >> $GITHUB_ENV
         chmod +x $KAS_CONTAINER
 
+    - name : Get meta-qcom-buildconf Tag
+      shell: bash
+      run: |
+        buildconf_repo="https://x-access-token:${{ env.stoken }}@github.com/qualcomm-linux/meta-qcom-buildconf.git"
+        echo "buildconf_repo=$buildconf_repo" >> $GITHUB_ENV
+        base="${{ inputs.base }}"
+        # Checkout meta-qcom-buildconf
+        if [[ $base == "tip" ]]; then
+          buildconf_tag="$(git ls-remote --tags "$buildconf_repo" \
+                            | awk -F/ '{print $NF}' \
+                            | sed 's/\^{}//' \
+                            | sort -V \
+                            | tail -n 1
+                          )"
+        else
+          buildconf_tag=$base
+        fi
+        echo "buildconf_tag=$buildconf_tag" >> $GITHUB_ENV
+
     - name: Run Kas Build
       id: build
       shell: bash
@@ -126,20 +145,15 @@ runs:
         ls -la
         export KAS_WORK_DIR=$PWD/kas
         echo $KAS_WORK_DIR
-        base="${{ inputs.base }}"
         kernel_ver="${{ env.kernel_ver }}"
-
-        if [[ "$base" == "tip" ]]; then
-          git clone https://github.com/qualcomm-linux/meta-qcom.git
-          cp kernel-override.yml meta-qcom/ci/
-          meta_qcom_sha=$(git -C meta-qcom rev-parse HEAD)
-          echo $meta_qcom_sha > build_id.txt
-          $KAS_CONTAINER build meta-qcom/ci/${{ env.rootfs }}.yml:meta-qcom/ci/${{ inputs.kernel_yaml }}.yml:meta-qcom/ci/qcom-distro-prop-image.yml:meta-qcom/ci/kernel-override.yml
-        else
-          aws s3 cp s3://${{ env.s3_bucket }}/meta-qcom/kas_files/${{ env.kernel_ver }}/kas-build-${{ env.rootfs }}.yml .
-          aws s3 cp s3://${{ env.s3_bucket }}/kernel/meta-qcom/kas_files/$kernel_ver/build_id.txt .
-          $KAS_CONTAINER build kas-build-${{ env.rootfs }}.yml:kernel-override.yml
-        fi
+        echo "meta-qcom-buildconf tag : ${{ env.buildconf_tag }}"
+        git clone ${{ env.buildconf_repo }} -b  ${{ env.buildconf_tag }}
+        $KAS_CONTAINER checkout meta-qcom-buildconf/lock.yml
+        cp meta-qcom-buildconf/lock.yml $KAS_WORK_DIR/meta-qcom/ci/lock.yml
+        cat kernel-override.yml
+        CI_YAML_DIR=$KAS_WORK_DIR/meta-qcom/ci
+        cp kernel-override.yml $CI_YAML_DIR
+        $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro-prop-image.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml
 
     - name: Prepare file list for log upload
       if: always()

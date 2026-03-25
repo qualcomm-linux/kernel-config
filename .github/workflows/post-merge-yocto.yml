@@ -20,6 +20,7 @@ on:
       base:
         description: base build or tip
         type: string
+        default: tip
         required: true
 
 jobs:
