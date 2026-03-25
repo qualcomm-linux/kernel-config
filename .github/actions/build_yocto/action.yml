@@ -119,7 +119,7 @@ runs:
     - name : Get meta-qcom-buildconf Tag
       shell: bash
       run: |
-        buildconf_repo="https://x-access-token:${{ env.stoken }}@github.com/qualcomm-linux/meta-qcom-buildconf.git"
+        buildconf_repo="https://x-access-token:${{ env.token }}@github.com/qualcomm-linux/meta-qcom-buildconf.git"
         echo "buildconf_repo=$buildconf_repo" >> $GITHUB_ENV
         base="${{ inputs.base }}"
         # Checkout meta-qcom-buildconf
