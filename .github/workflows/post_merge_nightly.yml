@@ -6,6 +6,12 @@ on:
     # Cron is in UTC
     - cron: "30 18 * * *"   # 18:30 UTC = 00:00 IST (GMT+5:30)
   workflow_dispatch:
+    inputs:
+      base:
+        description: base build or tip
+        type: string
+        default: tip
+        required: true
 
 jobs:
   fetch_head_sha:
@@ -31,6 +37,4 @@ jobs:
       sha: ${{ needs.fetch_head_sha.outputs.sha }}
       ref: "qcom-6.18.y"
       repo: "qualcomm-linux/kernel"
-      base: "tip"
-
-
+      base: ${{ inputs.base }}
