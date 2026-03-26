@@ -1,4 +1,7 @@
 {
+    "qcom-6.18.y": [
+        "qualcomm-kernel-maint"
+    ],
     "tech/all/config": [
         "qualcomm-kernel-maint"
     ],
