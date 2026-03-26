@@ -37,4 +37,4 @@ jobs:
       sha: ${{ needs.fetch_head_sha.outputs.sha }}
       ref: "qcom-6.18.y"
       repo: "qualcomm-linux/kernel"
-      base: ${{ inputs.base }}
+      base: ${{ inputs.base || 'tip' }}
