@@ -1,0 +1,75 @@
+name: _build_rt
+on:
+  workflow_call:
+    inputs:
+      docker_image:
+        description: Docker image
+        type: string
+        required: true
+      pr_number:
+        description: PR number
+        type: string
+        required: false
+      branch:
+        description: Branch name
+        type: string
+        required: false
+      repo:
+        description: Target repository
+        type: string
+        required: true
+      variant:
+        description: Build variant (RT or default)
+        type: string
+        required: true
+
+jobs:
+  build:
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync codebase
+        id: sync
+        uses: qualcomm-linux/kernel-config/.github/actions/sync@main
+        with:
+          base_branch: ${{ inputs.branch }}
+          pr_number: ${{ inputs.pr_number}}
+          GH_TOKEN: ${{ secrets.PAT }}
+          repo: ${{ inputs.repo }}
+
+      - name: Pull docker image
+        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+        with:
+          image: ${{ inputs.docker_image }}
+
+      - name: Build workspace
+        id: build_workspace
+        uses: qualcomm-linux/kernel-config/.github/actions/build@main
+        with:
+          docker_image: ${{ inputs.docker_image }}
+          workspace_path: ${{ steps.sync.outputs.workspace_path }}
+          variant: ${{ inputs.variant }}
+
+      - name: Update summary
+        if: success() || failure()
+        shell: bash
+        run: |
+          if [ ${{ steps.build_workspace.outcome }} == 'success' ]; then
+            echo "Build was successful"
+            summary=":heavy_check_mark: Build Success"
+          else
+            echo "Build failed"
+            summary=":x: Build Failed"
+          fi
+          SUMMARY='
+          <details><summary><i>Build Summary</i></summary>
+          '${summary}'
+          </details>
+          '
+          echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY

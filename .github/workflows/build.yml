@@ -22,6 +22,10 @@ on:
         description: Rootfs matrix
         type: string
         required: true
+      variant:
+        description: Build variant (RT or default)
+        type: string
+        required: true
 
     outputs:
       s3_location:
@@ -65,6 +69,7 @@ jobs:
         with:
           docker_image: ${{ inputs.docker_image }}
           workspace_path: ${{ steps.sync.outputs.workspace_path }}
+          variant: ${{ inputs.variant }}
 
       - name: Generate flat build
         id: generate_flat_build

@@ -9,6 +9,9 @@ inputs:
   workspace_path:
     description: Workspace path
     required: true
+  variant:
+    description: Kernel variant (default or RT)
+    required: true
 
 outputs:
   kernel_version:
@@ -18,12 +21,45 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Prepare and merge config fragments
+      id: merge_config
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Variant : ${{ inputs.variant }}"
+        cd "${{ inputs.workspace_path }}"
+        mkdir -p ../kobj
+
+        # Base fragment list
+        FRAGMENTS=(
+          arch/arm64/configs/defconfig
+          arch/arm64/configs/prune.config
+          arch/arm64/configs/qcom.config
+          kernel/configs/debug.config
+        )
+
+        # If variant=RT, append the RT fragment
+        if [[ "${{ inputs.variant }}" == "RT" || "${{ inputs.variant }}" == "rt" ]]; then
+          RT_FRAG="arch/arm64/configs/rt.config"
+          if [[ ! -f "$RT_FRAG" ]]; then
+            echo "ERROR: RT fragment '$RT_FRAG' not found."
+            exit 1
+          fi
+          echo "Including RT fragment: $RT_FRAG"
+          FRAGMENTS+=("$RT_FRAG")
+        else
+          echo "Variant '${{ inputs.variant }}' -> using default fragments only."
+        fi
+
+        # Merge all fragments on top of base defconfig
+        echo "Print all fragment name used for Build"
+        printf '%s\n' "${FRAGMENTS[@]}"
+        env -u KCONFIG_CONFIG ./scripts/kconfig/merge_config.sh -m -O ../kobj "${FRAGMENTS[@]}"
+
     - name: Make
       shell: bash
       run: |
         cd ${{ inputs.workspace_path }}
-        mkdir -p ../kobj
-        env -u KCONFIG_CONFIG ./scripts/kconfig/merge_config.sh -m -O ../kobj arch/arm64/configs/defconfig arch/arm64/configs/prune.config arch/arm64/configs/qcom.config kernel/configs/debug.config
         docker run -i --rm \
         --user $(id -u):$(id -g) \
         --workdir="$PWD" \

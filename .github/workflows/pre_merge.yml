@@ -47,6 +47,18 @@ jobs:
       branch: ${{ inputs.ref }}
       repo: ${{ inputs.repo }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
+      variant: default
+
+  build_rt:
+    needs: [loading, init-status]
+    uses: qualcomm-linux/kernel-config/.github/workflows/build_rt.yml@main
+    secrets: inherit
+    with:
+      docker_image: kmake-image:ver.1.0
+      pr_number: ${{ inputs.pr }}
+      branch: ${{ inputs.ref }}
+      repo: ${{ inputs.repo }}
+      variant: RT
 
   check_run:
     runs-on: ubuntu-latest
