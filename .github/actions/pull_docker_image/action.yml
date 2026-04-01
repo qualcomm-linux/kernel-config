@@ -12,13 +12,38 @@ inputs:
     required: false
     default: ver.1.0
 
+  registry:
+    description: "Registry to pull from. E.g. '<account>.dkr.ecr.<region>.amazonaws.com' or 'artifacts.codelinaro.org/clo-420-qli-registry'"
+    required: true
+
 runs:
   using: "composite"
   steps:
+    - name: Authenticate to registry (ECR only)
+      shell: bash
+      run: |
+        REGISTRY="${{ inputs.registry }}"
+        if [[ "$REGISTRY" == *.dkr.ecr.*.amazonaws.com ]]; then
+          echo "ECR registry detected — authenticating..."
+          REGION=$(echo "$REGISTRY" | grep -oP '(?<=dkr\.ecr\.)[^.]+')
+          aws ecr get-login-password --region "$REGION" | \
+            docker login --username AWS --password-stdin "$REGISTRY"
+        else
+          echo "Non-ECR registry — skipping authentication."
+        fi
+
     - name: Pull Docker image
       shell: bash
       run: |
-        echo "Pulling Docker image: ${{ inputs.image }}"
-        docker pull artifacts.codelinaro.org/clo-420-qli-registry/${{ inputs.image }}
-        echo "Docker image pulled successfully:"
-        docker tag artifacts.codelinaro.org/clo-420-qli-registry/${{ inputs.image }} kmake-image:${{ inputs.tag }}
+        echo "Pulling Docker image: ${{ inputs.registry }}/${{ inputs.image }}"
+        docker pull "${{ inputs.registry }}/${{ inputs.image }}"
+        echo "Docker image pulled successfully."
+
+    - name: Retag image locally
+      shell: bash
+      run: |
+        LOCAL_TAG=$(echo "${{ inputs.image }}" | cut -d: -f1)
+        echo "Tagging as $LOCAL_TAG:${{ inputs.tag }}"
+        docker tag "${{ inputs.registry }}/${{ inputs.image }}" "$LOCAL_TAG:${{ inputs.tag }}"
+        echo "Image tagged successfully."
+        

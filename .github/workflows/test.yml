@@ -66,6 +66,7 @@ jobs:
         uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
         with:
           image: ${{ inputs.docker_image }}
+          registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
       - name: Download URLs list
         if: ${{ inputs.build_type == 'kbdev' }}
