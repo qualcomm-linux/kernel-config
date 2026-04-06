@@ -153,7 +153,7 @@ runs:
         cat kernel-override.yml
         CI_YAML_DIR=$KAS_WORK_DIR/meta-qcom/ci
         cp kernel-override.yml $CI_YAML_DIR
-        $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro-prop-image.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml
+        $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml
 
     - name: Prepare file list for log upload
       if: always()
