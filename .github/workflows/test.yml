@@ -86,6 +86,17 @@ jobs:
       - name: Clone lava job render scripts
         run: cd .. && git clone https://github.com/qualcomm-linux/job_render
 
+      - name: Decide flash_type
+        id: flash
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.flash_type }}" ]; then
+            echo "flash_type=${{ inputs.flash_type }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "flash_type=${{ matrix.rootfs_matrix.flash_type }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Flash_type : $flash_type"
+
       - name: Create lava job definition
         uses: qualcomm-linux/kernel-config/.github/actions/lava_job_render@main
         id: create_job_definition
@@ -95,7 +106,7 @@ jobs:
           commit_SHA: ${{ inputs.commit_SHA }}
           branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number }}
-          flash_type: ${{ inputs.flash_type }}
+          flash_type: ${{ steps.flash.outputs.flash_type }}
         env:
           FIRMWARE: ${{ matrix.rootfs_matrix.firmwareid }}
           MACHINE: ${{ matrix.rootfs_matrix.machine }}

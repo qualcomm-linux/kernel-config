@@ -85,7 +85,7 @@ jobs:
       commit_SHA: ${{ inputs.sha }}
       branch: ${{ inputs.ref }}
       pr_number: ${{ inputs.pr }}
-      flash_type: "fastboot"
+      flash_type: ""
       build_type: "kbdev"
 
   comment:

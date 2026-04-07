@@ -6,7 +6,8 @@
     "target": "qcs6490-rb3gen2",
     "buildid": "QCM6490.LE.1.0-00376-STD.PROD-1",
     "firmwareid": "rb3gen2",
-    "rootfs": "rb3gen2-core-kit"
+    "rootfs": "rb3gen2-core-kit",
+    "flash_type": "fastboot"
   },
   "qcs9100-ride-r3": {
     "machine": "qcs9100-ride-r3",
@@ -15,7 +16,8 @@
     "target": "qcs9100-ride-r3",
     "buildid": "QCS9100.LE.1.0-00243-STD.PROD-1",
     "firmwareid": "sa8775p-ride",
-    "rootfs": "qcs9100-ride-sx"
+    "rootfs": "qcs9100-ride-sx",
+    "flash_type": "fastboot"
   },
   "qcs8300-ride": {
     "machine": "qcs8300-ride",
@@ -24,7 +26,8 @@
     "target": "qcs8300-ride",
     "buildid": "QCS8300.LE.1.0-00137-STD.PROD-1",
     "firmwareid": "qcs8300-ride",
-    "rootfs": "qcs8300-ride-sx"
+    "rootfs": "qcs8300-ride-sx",
+    "flash_type": "fastboot"
   },
   "sm8750-mtp": {
     "machine": "sm8750-mtp",
@@ -33,7 +36,8 @@
     "target": "sm8750-mtp",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": "sm8750-mtp"
+    "rootfs": "sm8750-mtp",
+    "flash_type": "fastboot"
   },
   "lemans-evk": {
     "machine": "lemans-evk",
@@ -42,7 +46,8 @@
     "target": "lemans-evk",
     "buildid": "QCS9100.LE.1.0-00243-STD.PROD-1",
     "firmwareid": "sa8775p-ride",
-    "rootfs": "iq-9075-evk"
+    "rootfs": "iq-9075-evk",
+    "flash_type": "fastboot"
   },
   "monaco-evk": {
     "machine": "monaco-evk",
@@ -51,7 +56,8 @@
     "target": "monaco-evk",
     "buildid": "QCS8300.LE.1.0-00137-STD.PROD-1",
     "firmwareid": "qcs8300-ride",
-    "rootfs": "iq-8275-evk"
+    "rootfs": "iq-8275-evk",
+    "flash_type": "fastboot"
   },
   "qcs615-adp-air": {
     "machine": "qcs615-ride",
@@ -60,7 +66,8 @@
     "target": "qcs615-adp-air",
     "buildid": "",
     "firmwareid": "qcs615-ride",
-    "rootfs": "qcs615-ride"
+    "rootfs": "qcs615-ride",
+    "flash_type": "fastboot"
   },
   "kaanapali-mtp": {
     "machine": "kaanapali-mtp",
@@ -69,7 +76,8 @@
     "target": "kaanapali-mtp",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": ""
+    "rootfs": "",
+    "flash_type": "fastboot"
   },
   "x1e80100-crd": {
     "machine": "x1e80100-crd",
@@ -78,6 +86,7 @@
     "target": "x1e80100-crd",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": "iq-x7181-evk"
+    "rootfs": "iq-x7181-evk",
+    "flash_type": "fastboot"
   }
 }
