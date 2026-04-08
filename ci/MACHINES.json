@@ -78,6 +78,6 @@
     "target": "x1e80100-crd",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": ""
+    "rootfs": "iq-x7181-evk"
   }
 }
