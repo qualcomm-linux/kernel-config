@@ -31,11 +31,11 @@
   },
   "sm8750-mtp": {
     "machine": "sm8750-mtp",
-    "firmware": "",
+    "firmware": "sm8750-mtp",
     "lavaname": "sm8750-mtp",
     "target": "sm8750-mtp",
     "buildid": "",
-    "firmwareid": "",
+    "firmwareid": "sm8750-mtp",
     "rootfs": "sm8750-mtp",
     "flash_type": "fastboot"
   },
