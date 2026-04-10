@@ -68,10 +68,13 @@ runs:
         mkdir -p "$build_dir"
 
     - name: Configure AWS
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        aws configure set aws_access_key_id $aws_access_key_id && \
+        aws configure set aws_secret_access_key $aws_secret_access_key && \
+        aws configure set default.region $aws-region
+      env:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
 
     - name: Set Kernel Version
