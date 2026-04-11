@@ -58,6 +58,7 @@ runs:
       with:
         image: kmake-image-ubuntu-noble-arm64:ver.1.0
         tag: ubuntu-noble-arm64
+        registry: artifacts.codelinaro.org/clo-420-qli-registry
 
     - name: Setup git config and Logging
       shell: bash
