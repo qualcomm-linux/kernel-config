@@ -67,14 +67,11 @@ runs:
         echo "LOGFILE=${{ github.workspace }}/build-logs.log" >> "$GITHUB_ENV"
 
     - name: Configure AWS
+      shell: bash
       run: |
-        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" && \
-        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" && \
-        aws configure set default.region "$AWS_REGION"
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: us-west-2
+        aws configure set aws_access_key_id "${{ env.AWS_ACCESS_KEY_ID}}" && \
+        aws configure set aws_secret_access_key "${{ env.AWS_SECRET_ACCESS_KEY}}" && \
+        aws configure set default.region "${{ env.AWS_REGION}}"
 
     - name: Sync kernel codebase
       shell: bash
