@@ -5,7 +5,6 @@ inputs:
   docker_image:
     description: Docker image
     required: true
-    default: kmake-image:latest
   workspace_path:
     description: Workspace path
     required: true

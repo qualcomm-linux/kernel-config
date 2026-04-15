@@ -43,7 +43,7 @@ jobs:
     uses: qualcomm-linux/kernel-config/.github/workflows/build.yml@main
     secrets: inherit
     with:
-      docker_image: kmake-image:ver.1.0
+      docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
       pr_number: ${{ inputs.pr }}
       branch: ${{ inputs.ref }}
       repo: ${{ inputs.repo }}
@@ -55,7 +55,7 @@ jobs:
     uses: qualcomm-linux/kernel-config/.github/workflows/build_rt.yml@main
     secrets: inherit
     with:
-      docker_image: kmake-image:ver.1.0
+      docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
       pr_number: ${{ inputs.pr }}
       branch: ${{ inputs.ref }}
       repo: ${{ inputs.repo }}
@@ -80,7 +80,7 @@ jobs:
     uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
     secrets: inherit
     with:
-      docker_image: kmake-image:ver.1.0
+      docker_image: ${{vars.TECH_TEAM_NAMESPACE}}/kmake-image:${{vars.KMAKE_IMAGE_VERSION}}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       commit_SHA: ${{ inputs.sha }}
