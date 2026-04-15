@@ -37,6 +37,9 @@ inputs:
   firmware:
     description: Firmware file to use for the build
     required: true
+  docker_image:
+    description: Full docker image name with tag (e.g. kmake-image-ubuntu-noble-arm64:ver.1.0)
+    required: true
 
 outputs:
   artifacts_location:
@@ -56,8 +59,8 @@ runs:
     - name: Pull Docker image for building Ubuntu packages
       uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
       with:
-        image: kmake-image-ubuntu-noble-arm64:ver.1.0
-        tag: ubuntu-noble-arm64
+        image: ${{ inputs.docker_image }}
+        registry: artifacts.codelinaro.org/clo-420-qli-registry
 
     - name: Setup git config and Logging
       shell: bash
@@ -124,7 +127,7 @@ runs:
         echo "==>Logging to $LOGFILE"
         echo "=== Kernel Build Log ===" >> "$LOGFILE"
         docker run -i \
-        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" ${{ inputs.docker_image }} \
         -c '
           cd kernel
           export BUILD_TOP=${{ env.build_top }}
@@ -139,7 +142,7 @@ runs:
       run: |
         echo "::group::$(printf '__________ %-100s' 'Generate Kernel Debian Package' | tr ' ' _)"
         docker run -i \
-        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" ${{ inputs.docker_image }} \
         -c '
           cd kernel
           # Run build-kernel-deb.sh and pass as argument the directory where kernel build artifacts were deployed (out/)
@@ -178,7 +181,7 @@ runs:
         echo "==>Logging to $LOGFILE"
         echo "=== Ubuntu Rootfs Build Log ===" >> "$LOGFILE"
         docker run -i \
-        --privileged --rm -v /dev:/dev -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        --privileged --rm -v /dev:/dev -v $PWD:$PWD --workdir="$PWD" ${{ inputs.docker_image }} \
         -c '
           FIRMWARE="${{ inputs.firmware }}"
           firmware=$(basename "$FIRMWARE")
@@ -194,7 +197,7 @@ runs:
       run: |
         echo "::group::$(printf '__________ %-100s' 'Generate dtb.bin' | tr ' ' _)"
         docker run -i \
-        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" ${{ inputs.docker_image }} \
         -c "
           sed -i 's/\r$//' /usr/bin/generate_boot_bins.sh
           generate_boot_bins.sh dtb --input kernel/out/${{ inputs.machine }}.dtb --output images
@@ -323,7 +326,7 @@ runs:
       shell: bash
       run: |
         docker run -i \
-        --privileged --rm -v $PWD:$PWD --workdir="$PWD" kmake-image:ubuntu-noble-arm64 \
+        --privileged --rm -v $PWD:$PWD --workdir="$PWD" ${{ inputs.docker_image }} \
         -c 'rm -rf ${{ github.workspace }}/*'
 
     - name: Update Summary

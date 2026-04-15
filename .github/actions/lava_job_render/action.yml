@@ -3,7 +3,6 @@ inputs:
   docker_image:
     description: Docker image
     required: true
-    default: kmake-image:ver.1.0
   kernel_version:
     description: Kernel Version
     required: true
