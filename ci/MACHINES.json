@@ -76,8 +76,8 @@
     "target": "kaanapali-mtp",
     "buildid": "",
     "firmwareid": "",
-    "rootfs": "",
-    "flash_type": "fastboot"
+    "rootfs": "kaanapali-mtp",
+    "flash_type": "qdl"
   },
   "x1e80100-crd": {
     "machine": "x1e80100-crd",
