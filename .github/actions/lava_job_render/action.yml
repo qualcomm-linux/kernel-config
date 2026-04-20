@@ -19,6 +19,9 @@ inputs:
   flash_type:
     description: Flash method to use QDL or fastboot
     required: false
+  build_type:
+    description: Build type kbdev/Yocto
+    required: false
 
 runs:
   using: "composite"
@@ -186,7 +189,7 @@ runs:
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
             -e rootfsurl="$rootfsurl" \
             ${{ inputs.docker_image }} \
-            jq '.artifacts.meta = env.rootfsurl' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
+            jq '.artifacts.flash_image = env.rootfsurl' data/cloudData.json > temp.json && mv temp.json data/cloudData.json
         fi
 
     - name: Update firmware and ramdisk
@@ -238,27 +241,21 @@ runs:
         echo "Flash type: $flash_type"
 
         if [[ "$flash_type" == "fastboot" ]]; then
-          docker run -i --rm \
-            --user "$(id -u):$(id -g)" \
-            --workdir="$PWD" \
-            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            -e TARGET="${{ env.LAVA_NAME }}" \
-            -e TARGET_DTB="${{ env.MACHINE }}" \
-            ${{ inputs.docker_image }} \
-            sh -c 'export BOOT_METHOD=fastboot && \
-              export TARGET=${TARGET} && \
-              export TARGET_DTB=${TARGET_DTB} && \
-              python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
+          export TARGET="${{ env.LAVA_NAME }}"
+          export TARGET_DTB="${{ env.MACHINE }}"
+          export BOOT_METHOD=fastboot
+          echo "Target $TARGET"
+          echo "Target DTB $TARGET_DTB"
+          python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge
         elif [[ "$flash_type" == "qdl" ]]; then
-          docker run -i --rm \
-            --user "$(id -u):$(id -g)" \
-            --workdir="$PWD" \
-            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            -e TARGET="${{ env.LAVA_NAME }}" \
-            -e TARGET_DTB="${{ env.MACHINE }}" \
-            ${{ inputs.docker_image }} \
-            sh -c 'export BOOT_METHOD=flash && \
-              export TARGET=${TARGET} && \
-              export TARGET_DTB=${TARGET_DTB} && \
-              python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge'
+          EXTRA_ARGS=""
+          if [[ "${{ inputs.build_type }}" == "yocto" ]]; then
+            EXTRA_ARGS="--meta-qcom"
+          fi
+          export TARGET="${{ env.LAVA_NAME }}"
+          export TARGET_DTB="${{ env.MACHINE }}"
+          export BOOT_METHOD=flasher
+          echo "QDL target $TARGET"
+          echo "QDL target DTB $TARGET_DTB"
+          python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge ${EXTRA_ARGS}
         fi
