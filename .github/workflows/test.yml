@@ -107,6 +107,7 @@ jobs:
           branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number }}
           flash_type: ${{ steps.flash.outputs.flash_type }}
+          build_type: ${{ inputs.build_type }}
         env:
           FIRMWARE: ${{ matrix.rootfs_matrix.firmwareid }}
           MACHINE: ${{ matrix.rootfs_matrix.machine }}
