@@ -88,5 +88,15 @@
     "firmwareid": "",
     "rootfs": "iq-x7181-evk",
     "flash_type": "fastboot"
+  },
+  "glymur-crd": {
+    "machine": "glymur-crd",
+    "firmware": "",
+    "lavaname": "glymur",
+    "target": "glymur-crd",
+    "buildid": "",
+    "firmwareid": "",
+    "rootfs": "glymur-crd",
+    "flash_type": "qdl"
   }
 }
