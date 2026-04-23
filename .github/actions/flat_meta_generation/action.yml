@@ -54,22 +54,23 @@ runs:
           tar -xzf qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz --strip-components=1 -C $meta_dir
 
           cd "$meta_dir"
-          sed -i '/rootfs.img/d' rawprogram0.xml
+          #sed -i '/rootfs.img/d' rawprogram0.xml
 
           mkdir -p "$artifacts_dir"
           cd "$artifacts_dir"
 
-          aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
+          #aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
+          wget "https://storage.kernelci.org/images/rootfs/debian/bookworm-kselftest/20250724.0/arm64/initrd.cpio.gz"
 
           if [ -n "$firmwareid" ]; then
-            gunzip -c initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz > kerneltest.cpio
+            gunzip -c initrd.cpio.gz > initrd.cpio
             aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
             gunzip -c initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz > firmware.cpio
-            cat kerneltest.cpio firmware.cpio > initramfs-$machine.cpio
+            cat initrd.cpio firmware.cpio > initramfs-$machine.cpio
             gzip initramfs-$machine.cpio
           else
             echo "Firmware not available for Target : $machine"
-            mv initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz initramfs-$machine.cpio.gz
+            mv initrd.cpio.gz initramfs-$machine.cpio.gz
           fi
 
           (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/initramfs-$machine.cpio.gz")
@@ -89,7 +90,7 @@ runs:
                 --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
                 --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
                 --linux ../kobj/arch/arm64/boot/Image \
-                --cmdline "console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto" \
+                --cmdline "console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto copy-modules rootdelay=10 root=PARTLABEL=rootfs" \
                 --output images
             '
 
