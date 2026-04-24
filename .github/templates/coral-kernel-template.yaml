@@ -13,9 +13,11 @@ defaults:
   runs-on:
     coral.actions/resource:
       compute:
+        purpose: ${{ inputs.compute.purpose }}
         provider: ${{ inputs.compute.provider }}
         architecture: ${{ inputs.compute.architecture }}
         os: ${{ inputs.compute.os }}
+        site: ${{ inputs.compute.site }}
         containment: ${{ inputs.compute.containment }}
 
 on:
@@ -164,6 +166,24 @@ on:
             hidden: true
             defaultValue: Qualcomm
 
+      compute.purpose:
+        type: string
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            type: 'Text'
+            defaultValue: 'qli'
+            hidden: true
+
+      compute.site:
+        type: string
+        required: false
+        coral.actions/metadata:
+          ui-annotations:
+            type: 'Text'
+            defaultValue: 'Hyderabad'
+            hidden: true
+
       compute.architecture:
         type: string
         required: false
@@ -179,7 +199,7 @@ on:
             type: Text
             label: Operating System
             required: false
-            defaultValue: Ubuntu22.04.2
+            defaultValue: Ubuntu22.04.3
 
 jobs:
   invoke-workflows:
