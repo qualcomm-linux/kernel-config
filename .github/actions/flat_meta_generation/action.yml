@@ -79,11 +79,19 @@ runs:
           dpkg-deb -xv systemd-boot-efi.deb systemd
 
           cd "$build_dir"
+          #Pack devictree in efi for glymur.
+          if [ "$rootfs" = "glymur-crd" ]; then
+            devicetree_arg="--devicetree ../kobj/arch/arm64/boot/dts/qcom/glymur-crd.dtb"
+          else
+            devicetree_arg=""
+          fi
+
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
             -e machine="$machine" \
+            -e devicetree_arg="$devicetree_arg" \
             "$docker_image" bash -c '
               generate_boot_bins.sh efi \
                 --ramdisk artifacts/initramfs-$machine.cpio.gz \
@@ -91,6 +99,7 @@ runs:
                 --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
                 --linux ../kobj/arch/arm64/boot/Image \
                 --cmdline "console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto copy-modules rootdelay=10 root=PARTLABEL=rootfs" \
+                $devicetree_arg \
                 --output images
             '
 
@@ -103,6 +112,10 @@ runs:
                 --input ../kobj/arch/arm64/boot/dts/qcom/$machine.dtb \
                 --output images
             "
+
+          if [ "$rootfs" = "glymur-crd" ]; then
+            cp "$build_dir/images/efi_with_dtb.bin" "$build_dir/images/efi.bin"
+          fi
 
           cp "$build_dir/images/efi.bin" "$meta_dir"
           cp "$build_dir/images/dtb.bin" "$meta_dir"
