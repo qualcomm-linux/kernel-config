@@ -67,7 +67,7 @@
     "buildid": "",
     "firmwareid": "qcs615-ride",
     "rootfs": "qcs615-ride",
-    "flash_type": "fastboot"
+    "flash_type": "qdl"
   },
   "kaanapali-mtp": {
     "machine": "kaanapali-mtp",
