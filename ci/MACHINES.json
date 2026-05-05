@@ -47,7 +47,7 @@
     "buildid": "QCS9100.LE.1.0-00243-STD.PROD-1",
     "firmwareid": "sa8775p-ride",
     "rootfs": "iq-9075-evk",
-    "flash_type": "fastboot"
+    "flash_type": "qdl"
   },
   "monaco-evk": {
     "machine": "monaco-evk",
