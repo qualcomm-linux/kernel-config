@@ -37,7 +37,7 @@
     "buildid": "",
     "firmwareid": "sm8750-mtp",
     "rootfs": "sm8750-mtp",
-    "flash_type": "fastboot"
+    "flash_type": "qdl"
   },
   "lemans-evk": {
     "machine": "lemans-evk",
