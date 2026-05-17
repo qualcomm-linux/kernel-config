@@ -121,10 +121,15 @@ runs:
       shell: bash
       env:
         FLASH_TYPE: ${{ inputs.flash_type }}
+        BUILD_TYPE: ${{ inputs.build_type }}
       run: |
         flash_type="${FLASH_TYPE:-qdl}"
         flash_type="$(echo "$flash_type" | tr '[:upper:]' '[:lower:]')"
         echo "Flash type: $flash_type"
+
+        build_type="${BUILD_TYPE:-yocto}"
+        build_type="$(echo "$build_type" | tr '[:upper:]' '[:lower:]')"
+        echo "Build type: $build_type"
 
         major=$(echo "${{ inputs.kernel_version }}" | cut -d. -f1)
         patchlevel=$(echo "${{ inputs.kernel_version }}" | cut -d. -f2 | cut -d- -f1)
@@ -250,12 +255,12 @@ runs:
         elif [[ "$flash_type" == "qdl" ]]; then
           EXTRA_ARGS=""
           if [[ "${{ inputs.build_type }}" == "yocto" ]]; then
-            EXTRA_ARGS="--meta-qcom"
+            EXTRA_ARGS="--meta-qcom_PreMerge --meta-qcom"
           fi
           export TARGET="${{ env.LAVA_NAME }}"
           export TARGET_DTB="${{ env.MACHINE }}"
           export BOOT_METHOD=flasher
           echo "QDL target $TARGET"
           echo "QDL target DTB $TARGET_DTB"
-          python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge ${EXTRA_ARGS}
+          python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json ${EXTRA_ARGS}
         fi

@@ -44,6 +44,7 @@ jobs:
     steps:
       - name: Update Summary
         run: |
+          echo "SHA : ${{ inputs.ref }}"
           echo "## Yocto Build Generation" >> $GITHUB_STEP_SUMMARY
           echo "- Pull Request Number: \`${{ inputs.pr || 'Nightly Build on Tip' }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Head Commit SHA: \`${{ inputs.sha || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
@@ -56,6 +57,8 @@ jobs:
     needs: init-status
     uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
     secrets: inherit
+    with:
+      branch: ${{ inputs.ref }}
 
   build_yocto:
     name: Build Yocto
@@ -83,11 +86,25 @@ jobs:
           APPID: ${{ secrets.APPID }}
           PVK: ${{ secrets.PVK }}
 
+  test:
+    needs: [init-status, loading, build_yocto]
+    uses: qualcomm-linux-stg/kernel-config/.github/workflows/test.yml@main
+    secrets: inherit
+    with:
+      docker_image: kmake-image:ver.1.0
+      rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
+      kernel_version: "6.18"
+      commit_SHA: ${{ inputs.sha }}
+      branch: ${{ inputs.ref }}
+      pr_number: "tip"
+      flash_type: "qdl"
+      build_type: "yocto"
+
   final-status:
     name: Finalize Status
     if: always()
     runs-on: ubuntu-latest
-    needs: [build_yocto, check_run]
+    needs: [build_yocto, check_run, test]
     steps:
       - name: Set final status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
