@@ -88,7 +88,7 @@ jobs:
 
   test:
     needs: [init-status, loading, build_yocto]
-    uses: qualcomm-linux-stg/kernel-config/.github/workflows/test.yml@main
+    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
     secrets: inherit
     with:
       docker_image: kmake-image:ver.1.0
