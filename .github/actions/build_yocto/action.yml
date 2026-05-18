@@ -178,14 +178,14 @@ runs:
         ls -la
         LINK="qcom-multimedia-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz"
         TARGET=$(readlink "$LINK")
-        cp "$TARGET" ${{ env.build_dir }}/${{ env.rootfs }}-rootfs.tar.gz
+        cp "$TARGET" ${{ env.build_dir }}/qcom-multimedia-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz
 
         LINK_PROP="qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz"
         TARGET_PROP=$(readlink "$LINK_PROP")
-        cp "$TARGET_PROP" ${{ env.build_dir }}/${{ env.rootfs }}-rootfs-prop.tar.gz
+        cp "$TARGET_PROP" ${{ env.build_dir }}/qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz
         
-        echo "${{ env.build_dir }}/${{ env.rootfs }}-rootfs.tar.gz" >> ${{ github.workspace }}/file_list.txt
-        echo "${{ env.build_dir }}/${{ env.rootfs }}-rootfs-prop.tar.gz" >> ${{ github.workspace }}/file_list.txt
+        echo "${{ env.build_dir }}/qcom-multimedia-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz" >> ${{ github.workspace }}/file_list.txt
+        echo "${{ env.build_dir }}/qcom-multimedia-proprietary-image-${{ env.rootfs }}.rootfs.qcomflash.tar.gz" >> ${{ github.workspace }}/file_list.txt
         cd ${{ env.build_dir }}
         if [ -f build_id.txt ]; then
           echo "${{ env.build_dir }}/build_id.txt" >> ${{ github.workspace }}/file_list.txt
