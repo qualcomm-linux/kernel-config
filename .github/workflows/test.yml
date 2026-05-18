@@ -131,21 +131,41 @@ jobs:
           STATE=""
           START_TIME=$(date +%s)
           while [ "$STATE" != "Finished" ]; do
-            state=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" | grep state)
-            STATE=$(echo "$state" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
-            echo "Current status: $STATE"
+            raw=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" 2>&1 || true)
             CURRENT_TIME=$(date +%s)
             ELAPSED_TIME=$(((CURRENT_TIME - START_TIME)/3600))
             if [ $ELAPSED_TIME -ge 2 ]; then
-                 echo "Timeout: 2 hours exceeded."
-                 summary=":x: Lava job exceeded time limit."
-                 echo "summary=$summary" >> $GITHUB_OUTPUT
-                 exit 1
+              echo "Timeout: 2 hours exceeded."
+              summary=":x: Lava job exceeded time limit."
+              echo "summary=$summary" >> $GITHUB_OUTPUT
+              exit 1
             fi
-            sleep 30
+            state_line=$(echo "$raw" | grep -i "^state" || true)
+            if [ -z "$state_line" ]; then
+              echo "Warning: could not retrieve job state, retrying in 30s..."
+              echo "$raw"
+              sleep 30
+              continue
+            fi
+            STATE=$(echo "$state_line" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
+            echo "Current status: $STATE"
+            if [ "$STATE" != "Finished" ]; then
+              sleep 30
+            fi
           done
-          health=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" | grep Health)
-          HEALTH=$(echo "$health" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
+          HEALTH=""
+          for attempt in 1 2 3; do
+            health_raw=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" 2>&1 || true)
+            health_line=$(echo "$health_raw" | grep -i "^health" || true)
+            HEALTH=$(echo "$health_line" | cut -d':' -f2 | sed 's/^ *//;s/ *$//')
+            if [ -n "$HEALTH" ]; then
+              break
+            fi
+            echo "Warning: could not retrieve job health (attempt $attempt/3), retrying in 10s..."
+            echo "$health_raw"
+            sleep 10
+          done
+          echo "Job health: $HEALTH"
           if [[ "$HEALTH" == "Complete" ]]; then
             TEST_RESULTS=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production results $JOB_ID" | grep fail || echo "Pass")
             if [[ "$TEST_RESULTS" == "Pass" ]]; then
