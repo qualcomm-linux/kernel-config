@@ -93,7 +93,7 @@ jobs:
     with:
       docker_image: kmake-image:ver.1.0
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
-      kernel_version: "6.18"
+      kernel_version: ${{ needs.build_yocto.outputs.kernel_version }}
       commit_SHA: ${{ inputs.sha }}
       branch: ${{ inputs.ref }}
       pr_number: "tip"

@@ -37,6 +37,9 @@ outputs:
   artifacts_location:
     value: ${{ steps.upload_artifacts.outputs.s3_location }}
     description: Aws location
+  kernel_version:
+    value: ${{ steps.get_version.outputs.kernel_version }}
+    description: Kernel version built
 
 runs:
   using: 'composite'
@@ -163,6 +166,21 @@ runs:
         CI_YAML_DIR=$KAS_WORK_DIR/meta-qcom/ci
         cp kernel-override.yml $CI_YAML_DIR
         $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml
+        if [[ "$kernel_ver" == "6.18" ]]; then
+          recipe="linux-qcom"
+        else
+          recipe="linux-qcom-next"
+        fi
+        raw_ver=$($KAS_CONTAINER shell $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml -c "bitbake -e $recipe | grep '^KERNEL_VERSION='" | cut -d'"' -f2)
+        echo "raw_kernel_version=$raw_ver" >> $GITHUB_ENV
+
+    - name: Get Kernel Version
+      id: get_version
+      shell: bash
+      run: |
+        version=$(echo "${{ env.raw_kernel_version }}" | sed 's/-g[0-9a-f][0-9a-f]*.*//; s/-dirty//')
+        echo "Kernel version: $version"
+        echo "kernel_version=$version" >> $GITHUB_OUTPUT
 
     - name: Prepare file list for log upload
       if: always()

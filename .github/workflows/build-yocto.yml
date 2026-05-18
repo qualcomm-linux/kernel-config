@@ -29,6 +29,9 @@ on:
       artifacts_location:
         description: 'Artifacts Upload location'
         value: ${{ jobs.compile_yocto.outputs.artifacts_location }}
+      kernel_version:
+        description: "Kernel version built"
+        value: ${{ jobs.compile_yocto.outputs.kernel_version }}
 
 env:
   CACHE_DIR: /efs/kernel/meta-qcom
@@ -76,6 +79,7 @@ jobs:
     outputs:
       artifacts_location: ${{ steps.build_yocto.outputs.artifacts_location }}
       workspace_path: ${{ steps.sync.outputs.workspace_path }}
+      kernel_version: ${{ steps.build_yocto.outputs.kernel_version }}
     strategy:
       fail-fast: false
       matrix:
