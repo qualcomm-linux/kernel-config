@@ -256,6 +256,8 @@ runs:
           EXTRA_ARGS=""
           if [[ "${{ inputs.build_type }}" == "yocto" ]]; then
             EXTRA_ARGS="--meta-qcom_PreMerge --meta-qcom"
+          else
+            EXTRA_ARGS="--qcom-next-ci-premerge"
           fi
           export TARGET="${{ env.LAVA_NAME }}"
           export TARGET_DTB="${{ env.MACHINE }}"
