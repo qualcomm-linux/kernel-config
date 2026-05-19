@@ -100,6 +100,114 @@ jobs:
       flash_type: "qdl"
       build_type: "yocto"
 
+
+  nightly_report:
+    name: Nightly Test Report
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all test JSON artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Tests-*
+          path: all-json
+          merge-multiple: true
+
+      - name: Download all job info artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: job_info_*
+          path: job-info
+          merge-multiple: true
+
+      - name: Generate report
+        run: |
+          set -e
+          INPUT_DIR="all-json"
+
+          sha="${{ inputs.sha }}"
+          short_sha="${sha:0:7}"
+          commit_url="https://github.com/${{ inputs.repo }}/commit/${sha}"
+          run_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          {
+            echo "# Nightly LAVA Test Report"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| **Branch** | \`${{ inputs.ref }}\` |"
+            echo "| **Commit** | [\`${short_sha}\`](${commit_url}) |"
+            echo "| **Run** | [${run_url}](${run_url}) |"
+            echo ""
+
+            if ls job-info/*.md 1>/dev/null 2>&1; then
+              echo "## LAVA Jobs"
+              cat job-info/*.md
+              echo ""
+            fi
+
+            mapfile -t FILES < <(ls "$INPUT_DIR"/*.json 2>/dev/null || true)
+            if [ ${#FILES[@]} -gt 0 ]; then
+              echo "## Test Matrix"
+              echo ""
+
+              TARGETS=()
+              for f in "${FILES[@]}"; do
+                TARGETS+=("$(basename "$f" .json | sed 's/^Tests-//')")
+              done
+
+              TESTS=$(jq -r '.[].name' "${FILES[@]}" | sort -u)
+
+              printf "| Test Case "
+              for t in "${TARGETS[@]}"; do printf "| %s " "$t"; done
+              printf "|
+"
+
+              printf "| --- "
+              for _ in "${TARGETS[@]}"; do printf "| :---: "; done
+              printf "|
+"
+
+              while IFS= read -r test; do
+                printf "| %s " "$test"
+                for t in "${TARGETS[@]}"; do
+                  res=$(jq -r --arg n "$test" '.[] | select(.name==$n) | .result'                     "$INPUT_DIR/Tests-${t}.json" 2>/dev/null || true)
+                  case "$res" in
+                    pass)  cell="✅" ;;
+                    fail)  cell="❌" ;;
+                    skip)  cell="⚠️" ;;
+                    error) cell="⛔" ;;
+                    *)     cell="➖" ;;
+                  esac
+                  printf "| %s " "$cell"
+                done
+                printf "|
+"
+              done <<< "$TESTS"
+
+              echo ""
+              echo "## Summary"
+              echo ""
+              printf "| Target | ✅ Pass | ❌ Fail | ⚠️ Skip | Total |
+"
+              printf "| --- | :---: | :---: | :---: | :---: |
+"
+              for t in "${TARGETS[@]}"; do
+                f="$INPUT_DIR/Tests-${t}.json"
+                total=$(jq 'length' "$f")
+                if [ "$total" -eq 0 ]; then
+                  printf "| %s | ➖ | ➖ | ➖ | N/A (Incomplete) |\n" "$t"
+                else
+                  pass=$(jq '[.[] | select(.result=="pass")] | length' "$f")
+                  fail=$(jq '[.[] | select(.result=="fail")] | length' "$f")
+                  skip=$(jq '[.[] | select(.result=="skip")] | length' "$f")
+                  printf "| %s | %s | %s | %s | %s |\n" "$t" "$pass" "$fail" "$skip" "$total"
+                fi
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   final-status:
     name: Finalize Status
     if: always()
