@@ -161,13 +161,11 @@ jobs:
 
               printf "| Test Case "
               for t in "${TARGETS[@]}"; do printf "| %s " "$t"; done
-              printf "|
-"
+              printf "|\n"
 
               printf "| --- "
               for _ in "${TARGETS[@]}"; do printf "| :---: "; done
-              printf "|
-"
+              printf "|\n"
 
               while IFS= read -r test; do
                 printf "| %s " "$test"
@@ -182,17 +180,14 @@ jobs:
                   esac
                   printf "| %s " "$cell"
                 done
-                printf "|
-"
+                printf "|\n"
               done <<< "$TESTS"
 
               echo ""
               echo "## Summary"
               echo ""
-              printf "| Target | ✅ Pass | ❌ Fail | ⚠️ Skip | Total |
-"
-              printf "| --- | :---: | :---: | :---: | :---: |
-"
+              printf "| Target | ✅ Pass | ❌ Fail | ⚠️ Skip | Total |\n"
+              printf "| --- | :---: | :---: | :---: | :---: |\n"
               for t in "${TARGETS[@]}"; do
                 f="$INPUT_DIR/Tests-${t}.json"
                 total=$(jq 'length' "$f")
