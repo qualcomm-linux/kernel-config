@@ -63,7 +63,7 @@ jobs:
           target: ${{ matrix.ubuntu_matrix.target }}
           efi: ${{ matrix.ubuntu_matrix.efi }}
           firmware: ${{ matrix.ubuntu_matrix.firmware }}
-          docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image-ubuntu-noble-arm64:${{ vars.KMAKE_UBUNTU_IMAGE_VERSION }}
+          docker_image: kmake-image-ubuntu-noble-arm64:${{ vars.KMAKE_UBUNTU_IMAGE_VERSION }}
         env:
           token: ${{ secrets.PAT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
