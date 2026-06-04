@@ -8,7 +8,7 @@
     "firmwareid": "rb3gen2",
     "rootfs": "rb3gen2-core-kit",
     "flash_type": "qdl",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "qcs9100-ride-r3": {
     "machine": "qcs9100-ride-r3",
@@ -19,7 +19,7 @@
     "firmwareid": "sa8775p-ride",
     "rootfs": "qcs9100-ride-sx",
     "flash_type": "qdl",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "qcs8300-ride": {
     "machine": "qcs8300-ride",
@@ -30,7 +30,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "qcs8300-ride-sx",
     "flash_type": "qdl",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "sm8750-mtp": {
     "machine": "sm8750-mtp",
@@ -41,7 +41,7 @@
     "firmwareid": "sm8750-mtp",
     "rootfs": "sm8750-mtp",
     "flash_type": "qdl",
-    "branches": ["qcom-next-staging"]
+    "branches": ["qcom-next-staging", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "lemans-evk": {
     "machine": "lemans-evk",
@@ -52,7 +52,7 @@
     "firmwareid": "sa8775p-ride",
     "rootfs": "iq-9075-evk",
     "flash_type": "qdl",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "monaco-evk": {
     "machine": "monaco-evk",
@@ -63,7 +63,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "iq-8275-evk",
     "flash_type": "fastboot",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "qcs615-adp-air": {
     "machine": "qcs615-ride",
@@ -74,7 +74,7 @@
     "firmwareid": "qcs615-ride",
     "rootfs": "qcs615-ride",
     "flash_type": "qdl",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "kaanapali-mtp": {
     "machine": "kaanapali-mtp",
@@ -96,7 +96,7 @@
     "firmwareid": "",
     "rootfs": "iq-x7181-evk",
     "flash_type": "fastboot",
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr"]
   },
   "glymur-crd": {
     "machine": "glymur-crd",
