@@ -24,7 +24,7 @@ on:
       base:
         description: base build or tip
         type: string
-        default: tip
+        default: tag
         required: true
 
 jobs:

@@ -120,6 +120,7 @@ runs:
         chmod +x $KAS_CONTAINER
 
     - name : Get meta-qcom-buildconf Tag
+      if: inputs.base != 'tip'
       shell: bash
       run: |
         buildconf_repo="https://x-access-token:${{ env.token }}@github.com/qualcomm-linux/meta-qcom-buildconf.git"
@@ -132,7 +133,7 @@ runs:
         else
           ref_prefix="master"
         fi
-        if [[ "$base" == "tip" ]]; then
+        if [[ "$base" == "tag" ]]; then
           # Use the latest tag matching the prefix (wrynose-* or master-*)
           buildconf_ref="$(git ls-remote --tags "$buildconf_repo" \
                              | awk -F/ '{print $NF}' \
@@ -158,20 +159,43 @@ runs:
         export KAS_WORK_DIR=$PWD/kas
         echo $KAS_WORK_DIR
         kernel_ver="${{ env.kernel_ver }}"
-        echo "meta-qcom-buildconf ref : ${{ env.buildconf_ref }}"
-        git clone ${{ env.buildconf_repo }} -b  ${{ env.buildconf_ref }}
-        $KAS_CONTAINER checkout meta-qcom-buildconf/lock.yml
-        cp meta-qcom-buildconf/lock.yml $KAS_WORK_DIR/meta-qcom/ci/lock.yml
-        cat kernel-override.yml
-        CI_YAML_DIR=$KAS_WORK_DIR/meta-qcom/ci
-        cp kernel-override.yml $CI_YAML_DIR
-        $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml
+        base="${{ inputs.base }}"
+        branch="${{ inputs.branch }}"
+
+        if [[ "$base" == "tip" ]]; then
+          echo "Building from meta-qcom tip"
+
+          if [[ "$branch" == "qcom-6.18.y" ]]; then
+            meta_qcom_ref="wrynose"
+          else
+            meta_qcom_ref="master"
+          fi
+
+          git clone https://github.com/qualcomm-linux/meta-qcom.git -b $meta_qcom_ref
+          meta_qcom_sha=$(git -C meta-qcom rev-parse HEAD)
+          echo $meta_qcom_sha > build_id.txt
+          cat build_id.txt
+          cat kernel-override.yml
+          CI_YAML_DIR=$KAS_WORK_DIR/meta-qcom/ci
+          cp kernel-override.yml $CI_YAML_DIR
+          $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml
+        else
+          echo "meta-qcom-buildconf ref : ${{ env.buildconf_ref }}"
+          git clone ${{ env.buildconf_repo }} -b  ${{ env.buildconf_ref }}
+          $KAS_CONTAINER checkout meta-qcom-buildconf/lock.yml
+          cp meta-qcom-buildconf/lock.yml $KAS_WORK_DIR/meta-qcom/ci/lock.yml
+          cat kernel-override.yml
+          CI_YAML_DIR=$KAS_WORK_DIR/meta-qcom/ci
+          cp kernel-override.yml $CI_YAML_DIR
+          $KAS_CONTAINER build $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml
+        fi
+
         if [[ "$kernel_ver" == "6.18" ]]; then
           recipe="linux-qcom"
         else
           recipe="linux-qcom-next"
         fi
-        raw_ver=$($KAS_CONTAINER shell $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml:$CI_YAML_DIR/lock.yml -c "bitbake -e $recipe | grep '^KERNEL_VERSION='" | cut -d'"' -f2)
+        raw_ver=$($KAS_CONTAINER shell $CI_YAML_DIR/${{ env.rootfs }}.yml:$CI_YAML_DIR/${{ inputs.kernel_yaml }}.yml:$CI_YAML_DIR/qcom-distro.yml:$CI_YAML_DIR/kernel-override.yml -c "bitbake -e $recipe | grep '^KERNEL_VERSION='" | cut -d'"' -f2)
         echo "raw_kernel_version=$raw_ver" >> $GITHUB_ENV
 
     - name: Get Kernel Version
