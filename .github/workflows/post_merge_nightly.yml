@@ -12,6 +12,11 @@ on:
         type: string
         default: tag
         required: true
+      meta_qcom_pr:
+        description: List of meta-qcom PR's
+        type: string
+        default: ''
+        required: false
 
 jobs:
   fetch_head_sha:
@@ -38,3 +43,4 @@ jobs:
       ref: "qcom-6.18.y"
       repo: "qualcomm-linux/kernel"
       base: ${{ inputs.base || 'tag' }}
+      pr_list: ${{ inputs.meta_qcom_pr }}

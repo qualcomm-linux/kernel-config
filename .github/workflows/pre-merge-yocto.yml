@@ -26,6 +26,11 @@ on:
         type: string
         default: tag
         required: true
+      pr_list:
+        description: list of open PR's
+        type: string
+        default: ''
+        required: false
 
 jobs:
   init-status:
@@ -71,6 +76,7 @@ jobs:
       sha: ${{ inputs.sha }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
       base: ${{ inputs.base }}
+      pr_list: ${{ inputs.pr_list }}
 
   check_run:
     runs-on: ubuntu-latest

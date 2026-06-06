@@ -25,6 +25,11 @@ on:
         description: base build or tip
         type: string
         required: true
+      pr_list:
+        description: list of open PR's
+        type: string
+        default: ''
+        required: false
     outputs:
       artifacts_location:
         description: 'Artifacts Upload location'
@@ -99,6 +104,7 @@ jobs:
           branch: ${{ inputs.ref }}
           base: ${{ inputs.base }}
           kernel_yaml: ${{ needs.kas-setup.outputs.kernel_yaml }}
+          pr_list: ${{ inputs.pr_list }}
         env:
           token: ${{ secrets.PAT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
