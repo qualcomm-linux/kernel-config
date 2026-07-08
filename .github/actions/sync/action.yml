@@ -72,40 +72,55 @@ runs:
         jq --raw-output .body > pr-desc
         cat pr-desc
 
-    - name: Retrieve Dependent PRs
+    - name: Retrieve Dependencies
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
         set +o pipefail
         cat pr-desc | \
-        grep --perl-regexp '^Depends-on:( #\d+,)*( #\d+)$' | \
+        grep --perl-regexp '^Depends-on:' | \
         cut -d ':' -f2 | \
         tr ',' '\n' | \
         sed 's/^ *//' | \
-        sed 's/#//' > pr-deps
+        sed 's/ *$//' | \
+        sed 's/^#//' | \
+        sed '/^$/d' > pr-deps
         cat pr-deps
 
-    - name: Validate Dependent PRs
+    - name: Validate Dependencies
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       env:
         GH_TOKEN: ${{ inputs.GH_TOKEN }}
       shell: bash
       run: |
         touch topic-branches
-        touch invalid-prs
+        touch invalid-deps
         base_pr=${{ inputs.pr_number }}
-        while read -r dep_pr; do
-          resp=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/$dep_pr")
-          if echo "$resp" | jq -e ".merged_at != null" > /dev/null; then
-            base_ref=$(echo "$resp" | jq -r .base.ref)
-            echo "$dep_pr,$base_ref" >> topic-branches
+
+        while read -r dep; do
+          [ -z "$dep" ] && continue
+
+          if [[ "$dep" =~ ^[0-9]+$ ]]; then
+            resp=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/$dep")
+            if echo "$resp" | jq -e ".merged_at != null" > /dev/null; then
+              base_ref=$(echo "$resp" | jq -r .base.ref)
+              echo "$dep,$base_ref" >> topic-branches
+            else
+              echo "#$dep" >> invalid-deps
+            fi
+          elif git ls-remote --exit-code --heads https://github.com/qualcomm-linux/kernel-topics.git "$dep" > /dev/null 2>&1; then
+            echo "$dep,$dep" >> topic-branches
           else
-            echo "#$dep_pr" >> invalid-prs
+            echo "#$dep" >> invalid-deps
           fi
         done < pr-deps
 
-        if [ -s "invalid-prs" ]; then
-            msg="CI build failed due to invalid or unmerged dependent PRs: $(paste -sd ' ' < invalid-prs)"
+        if [ -s "topic-branches" ]; then
+          sort -t, -k2,2 -u topic-branches -o topic-branches
+        fi
+
+        if [ -s "invalid-deps" ]; then
+            msg="CI build failed due to invalid or unmerged dependencies: $(paste -sd ' ' < invalid-deps)"
             json=$(jq -n --arg body "$msg" '{body: $body}')
             curl -s -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/qualcomm-linux/kernel-topics/issues/"$base_pr"/comments \
@@ -166,4 +181,3 @@ runs:
         else
           echo "workspace=${{ github.workspace }}/kernel" >> "$GITHUB_OUTPUT"
         fi
-
