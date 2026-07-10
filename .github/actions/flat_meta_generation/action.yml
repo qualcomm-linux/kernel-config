@@ -30,10 +30,12 @@ runs:
           machine=$(echo "$row" | jq -r '.machine')
           rootfs=$(echo "$row" | jq -r '.rootfs')
           firmwareid=$(echo "$row" | jq -r '.firmwareid')
+          hypervisor=$(echo "$row" | jq -r '.hypervisor // ""')
 
           echo "Target : $machine"
           echo "Rootfs ID : $rootfs"
           echo "Firmware ID : $firmwareid"
+          echo "Hypervisor : $hypervisor"
           echo "-----------------------------"
 
           if [ -z "$rootfs" ]; then
@@ -91,6 +93,11 @@ runs:
             cmdline="$cmdline arm64.nopauth"
           fi
 
+          dtb_path="../kobj/arch/arm64/boot/dts/qcom/$machine.dtb"
+          if [ "$hypervisor" = "kvm" ]; then
+            dtb_path="../kobj/arch/arm64/boot/dts/qcom/$machine-el2.dtb"
+          fi
+
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
@@ -113,11 +120,12 @@ runs:
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
             -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            "$docker_image" bash -c "
+            -e dtb_path="$dtb_path" \
+            "$docker_image" bash -c '
               generate_boot_bins.sh dtb \
-                --input ../kobj/arch/arm64/boot/dts/qcom/$machine.dtb \
+                --input "$dtb_path" \
                 --output images
-            "
+            '
 
           if [ "$rootfs" = "glymur-crd" ]; then
             cp "$build_dir/images/efi_with_dtb.bin" "$build_dir/images/efi.bin"

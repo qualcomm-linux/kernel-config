@@ -77,7 +77,7 @@ runs:
           const rootfs_matrix = Object.values(targets)
             .filter(({ rootfs }) => rootfs && rootfs.trim() !== '')
             .filter(({ branches }) => !branch || !branches || branches.includes(branch))
-            .map(({ machine, rootfs, firmwareid, lavaname, flash_type }) => ({ machine, rootfs, firmwareid, lavaname, flash_type }));
+            .map(({ machine, rootfs, firmwareid, lavaname, flash_type, hypervisor }) => ({ machine, rootfs, firmwareid, lavaname, flash_type, hypervisor }));
           core.setOutput('rootfs_matrix', JSON.stringify(rootfs_matrix));
           console.log("Rootfs Matrix:", rootfs_matrix);
 

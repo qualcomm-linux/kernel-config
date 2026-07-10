@@ -8,6 +8,7 @@
     "firmwareid": "rb3gen2",
     "rootfs": "rb3gen2-core-kit",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "qcs9100-ride-r3": {
@@ -19,6 +20,7 @@
     "firmwareid": "sa8775p-ride",
     "rootfs": "qcs9100-ride-sx",
     "flash_type": "qdl",
+    "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "qcs8300-ride": {
@@ -30,6 +32,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "qcs8300-ride-sx",
     "flash_type": "qdl",
+    "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "sm8750-mtp": {
@@ -41,6 +44,7 @@
     "firmwareid": "sm8750-mtp",
     "rootfs": "sm8750-mtp",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "lemans-evk": {
@@ -52,6 +56,7 @@
     "firmwareid": "sa8775p-ride",
     "rootfs": "iq-9075-evk",
     "flash_type": "qdl",
+    "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "monaco-evk": {
@@ -63,6 +68,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "iq-8275-evk",
     "flash_type": "qdl",
+    "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "qcs615-adp-air": {
@@ -74,6 +80,7 @@
     "firmwareid": "qcs615-ride",
     "rootfs": "qcs615-ride",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "kaanapali-mtp": {
@@ -85,6 +92,7 @@
     "firmwareid": "kaanapali-mtp",
     "rootfs": "kaanapali-mtp",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging"]
   },
   "hamoa-iot-evk": {
@@ -96,6 +104,7 @@
     "firmwareid": "iq-x7181-evk",
     "rootfs": "iq-x7181-evk",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy"]
   },
   "glymur-crd": {
@@ -107,6 +116,7 @@
     "firmwareid": "glymur-crd",
     "rootfs": "glymur-crd",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging"]
   },
   "qrb2210-rb1": {
@@ -118,6 +128,7 @@
     "firmwareid": "rb1",
     "rootfs": "rb1-core-kit",
     "flash_type": "qdl",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging"]
   }
 }
