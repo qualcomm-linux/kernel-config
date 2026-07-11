@@ -21,3 +21,151 @@ jobs:
         remove-stale-when-updated: true
         remove-issue-stale-when-updated: true
         remove-pr-stale-when-updated: true
+
+  stale-kernel-prs:
+    name: Close stale PRs in ${{ matrix.repository }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repository:
+        - qualcomm-linux/kernel
+        - qualcomm-linux/kernel-topics
+    steps:
+    - uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.PAT }}
+        script: |
+          const repository = '${{ matrix.repository }}';
+          const [owner, repo] = repository.split('/');
+          const staleLabel = 'stale';
+          const daysBeforeStale = 30;
+          const daysBeforeClose = 5;
+          const staleCutoff = Date.now() - daysBeforeStale * 24 * 60 * 60 * 1000;
+          const closeCutoff = Date.now() - daysBeforeClose * 24 * 60 * 60 * 1000;
+          const staleMessage =
+            `@${repository} This pull request has been marked as stale due to ` +
+            `${daysBeforeStale} days of inactivity and will automatically close ` +
+            `after an additional ${daysBeforeClose} days.`;
+
+          const stats = {
+            checked: 0,
+            markedStale: 0,
+            closed: 0,
+            removedStale: 0,
+          };
+
+          async function ensureStaleLabel() {
+            try {
+              await github.rest.issues.getLabel({
+                owner,
+                repo,
+                name: staleLabel,
+              });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: staleLabel,
+                color: 'ededed',
+                description: 'No recent activity',
+              });
+            }
+          }
+
+          async function getLatestStaleLabelTime(issue_number) {
+            const events = await github.paginate(github.rest.issues.listEvents, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const staleEvents = events
+              .filter((event) =>
+                event.event === 'labeled' &&
+                event.label &&
+                event.label.name === staleLabel)
+              .map((event) => Date.parse(event.created_at))
+              .filter((timestamp) => !Number.isNaN(timestamp));
+
+            return staleEvents.length ? Math.max(...staleEvents) : null;
+          }
+
+          await ensureStaleLabel();
+
+          const pulls = await github.paginate(github.rest.pulls.list, {
+            owner,
+            repo,
+            state: 'open',
+            sort: 'updated',
+            direction: 'asc',
+            per_page: 100,
+          });
+
+          for (const pull of pulls) {
+            stats.checked++;
+
+            const updatedAt = Date.parse(pull.updated_at);
+            const labels = pull.labels || [];
+            const hasStaleLabel = labels.some((label) => label.name === staleLabel);
+
+            if (hasStaleLabel) {
+              const staleLabelTime = await getLatestStaleLabelTime(pull.number);
+
+              if (staleLabelTime && updatedAt > staleLabelTime + 2 * 60 * 1000) {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: pull.number,
+                  name: staleLabel,
+                });
+                stats.removedStale++;
+                continue;
+              }
+
+              if ((staleLabelTime || updatedAt) <= closeCutoff) {
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                  state: 'closed',
+                });
+                stats.closed++;
+              }
+
+              continue;
+            }
+
+            if (updatedAt <= staleCutoff) {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pull.number,
+                labels: [staleLabel],
+              });
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull.number,
+                body: staleMessage,
+              });
+
+              stats.markedStale++;
+            }
+          }
+
+          await core.summary
+            .addHeading(`Stale PRs: ${repository}`)
+            .addTable([
+              [{ data: 'Checked', header: true }, String(stats.checked)],
+              [{ data: 'Marked stale', header: true }, String(stats.markedStale)],
+              [{ data: 'Closed', header: true }, String(stats.closed)],
+              [{ data: 'Removed stale label', header: true }, String(stats.removedStale)],
+            ])
+            .write();
