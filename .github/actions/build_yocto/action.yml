@@ -220,7 +220,11 @@ runs:
       run: |
         cd ${{ env.build_dir }}
         echo "In build : lock_arg : ${{ env.lock_arg }}"
-        $KAS_CONTAINER build ${{ env.CI_YAML_DIR }}/${{ env.rootfs }}.yml:${{ env.CI_YAML_DIR }}/qcom-distro.yml:${{ env.CI_YAML_DIR }}/kernel-override.yml${{ env.lock_arg }}${{ env.pr_override_arg }}
+        kas_build_args=()
+        if [[ "${{ env.base }}" != "tip" ]]; then
+          kas_build_args+=(--skip repos_checkout --skip repos_apply_patches)
+        fi
+        $KAS_CONTAINER build "${kas_build_args[@]}" ${{ env.CI_YAML_DIR }}/${{ env.rootfs }}.yml:${{ env.CI_YAML_DIR }}/qcom-distro.yml:${{ env.CI_YAML_DIR }}/kernel-override.yml${{ env.pr_override_arg }}
 
         if [[ "${{ env.kernel_ver }}" == "6.18" ]]; then
           recipe="linux-qcom"
