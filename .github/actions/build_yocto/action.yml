@@ -232,7 +232,7 @@ runs:
           recipe="linux-qcom-next"
         fi
 
-        raw_ver=$($KAS_CONTAINER shell ${{ env.CI_YAML_DIR }}/${{ env.rootfs }}.yml:${{ env.CI_YAML_DIR }}/qcom-distro.yml:${{ env.CI_YAML_DIR }}/kernel-override.yml${{ env.lock_arg }}${{ env.pr_override_arg }} -c "bitbake -e $recipe | grep '^KERNEL_VERSION='" | cut -d'"' -f2)
+        raw_ver=$($KAS_CONTAINER shell ${{ env.CI_YAML_DIR }}/${{ env.rootfs }}.yml:${{ env.CI_YAML_DIR }}/qcom-distro.yml:${{ env.CI_YAML_DIR }}/kernel-override.yml${{ env.pr_override_arg }} -c "bitbake -e $recipe | grep '^KERNEL_VERSION='" | cut -d'"' -f2)
         echo "raw_kernel_version=$raw_ver" >> $GITHUB_ENV
 
     - name: Get Kernel Version
