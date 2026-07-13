@@ -20,6 +20,7 @@ runs:
     - name: Create Flat META
       shell: bash
       run: |
+        set -euo pipefail
         set -x
         workspace="${{ inputs.workspace_path }}"
         s3_bucket="${{ inputs.s3_bucket }}"
@@ -39,7 +40,7 @@ runs:
           echo "-----------------------------"
 
           if [ -z "$rootfs" ]; then
-            echo "No Rootfs present for $target, skip generating Flat Build."
+            echo "No Rootfs present for $machine, skip generating Flat Build."
             continue
           fi
 
@@ -58,11 +59,40 @@ runs:
           cd "$meta_dir"
           #sed -i '/rootfs.img/d' rawprogram0.xml
 
+          if [ -f rootfs.img ]; then
+            modules_dir="$workspace/../kobj/tar-install/lib/modules"
+            rootfs_mount="$build_dir/rootfs-mount"
+            rootfs_mounted=0
+
+            cleanup_rootfs_mount() {
+              if [ "$rootfs_mounted" -eq 1 ]; then
+                sync || true
+                sudo umount "$rootfs_mount" || true
+              fi
+              rmdir "$rootfs_mount" 2>/dev/null || true
+            }
+
+            trap cleanup_rootfs_mount EXIT
+
+            mkdir -p "$rootfs_mount"
+            sudo mount -o loop rootfs.img "$rootfs_mount"
+            rootfs_mounted=1
+            sudo mkdir -p "$rootfs_mount/lib/modules"
+            sudo cp -a "$modules_dir/." "$rootfs_mount/lib/modules/"
+            sync
+            sudo umount "$rootfs_mount"
+            rootfs_mounted=0
+            rmdir "$rootfs_mount"
+            trap - EXIT
+          else
+            echo "rootfs.img not present for $machine, skip packing modules into rootfs.img."
+          fi
+
           mkdir -p "$artifacts_dir"
           cd "$artifacts_dir"
 
           #aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
-          wget "https://storage.kernelci.org/images/rootfs/debian/bookworm-kselftest/20250724.0/arm64/initrd.cpio.gz"
+          wget "https://storage.kernelci.org/images/rootfs/debian/trixie/20260219.0/arm64/initrd.cpio.gz"
 
           if [ -n "$firmwareid" ]; then
             gunzip -c initrd.cpio.gz > initrd.cpio
