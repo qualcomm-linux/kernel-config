@@ -134,7 +134,7 @@ runs:
       shell: bash
       run: |
         TOPIC_BRANCH=${{ inputs.base_branch }}
-        echo "baseline https://github.com/qualcomm-linux/kernel.git qcom-next-staging-topics" > merge.conf
+        echo "baseline https://github.com/qualcomm-linux/kernel.git qcom-next" > merge.conf
         while IFS=',' read -r pr_number topic_branch; do
           echo "$topic_branch https://github.com/qualcomm-linux/kernel-topics.git $topic_branch" >> merge.conf
         done < topic-branches
