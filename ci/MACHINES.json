@@ -32,7 +32,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "qcs8300-ride-sx",
     "flash_type": "qdl",
-    "hypervisor": "kvm",
+    "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
   "sm8750-mtp": {
