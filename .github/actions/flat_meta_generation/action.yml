@@ -32,11 +32,13 @@ runs:
           rootfs=$(echo "$row" | jq -r '.rootfs')
           firmwareid=$(echo "$row" | jq -r '.firmwareid')
           hypervisor=$(echo "$row" | jq -r '.hypervisor // ""')
+          storage=$(echo "$row" | jq -r '.storage // "ufs"')
 
           echo "Target : $machine"
           echo "Rootfs ID : $rootfs"
           echo "Firmware ID : $firmwareid"
           echo "Hypervisor : $hypervisor"
+          echo "Storage : $storage"
           echo "-----------------------------"
 
           if [ -z "$rootfs" ]; then
@@ -163,5 +165,12 @@ runs:
 
           cp "$build_dir/images/efi.bin" "$meta_dir"
           cp "$build_dir/images/dtb.bin" "$meta_dir"
+          if [ "$storage" = "spinor" ]; then
+            if [ -d "$meta_dir/spinor" ]; then
+              cp "$build_dir/images/dtb.bin" "$meta_dir/spinor/dtb.bin"
+            else
+              echo "spinor directory not present for $machine, skip copying dtb.bin."
+            fi
+          fi
           tar -czvf "$workspace/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz" "qcom-multimedia-image-${rootfs}.rootfs.qcomflash/"
         done

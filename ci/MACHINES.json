@@ -8,6 +8,7 @@
     "firmwareid": "rb3gen2",
     "rootfs": "rb3gen2-core-kit",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -20,6 +21,7 @@
     "firmwareid": "sa8775p-ride",
     "rootfs": "qcs9100-ride-sx",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -32,6 +34,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "qcs8300-ride-sx",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -44,6 +47,7 @@
     "firmwareid": "sm8750-mtp",
     "rootfs": "sm8750-mtp",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -56,6 +60,7 @@
     "firmwareid": "sa8775p-ride",
     "rootfs": "iq-9075-evk",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -68,6 +73,7 @@
     "firmwareid": "qcs8300-ride",
     "rootfs": "iq-8275-evk",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "kvm",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -80,6 +86,7 @@
     "firmwareid": "qcs615-ride",
     "rootfs": "qcs615-ride",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -92,6 +99,7 @@
     "firmwareid": "kaanapali-mtp",
     "rootfs": "kaanapali-mtp",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -104,6 +112,7 @@
     "firmwareid": "iq-x7181-evk",
     "rootfs": "iq-x7181-evk",
     "flash_type": "qdl",
+    "storage": "spinor",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -116,6 +125,7 @@
     "firmwareid": "glymur-crd",
     "rootfs": "glymur-crd",
     "flash_type": "qdl",
+    "storage": "spinor",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   },
@@ -128,6 +138,7 @@
     "firmwareid": "rb1",
     "rootfs": "rb1-core-kit",
     "flash_type": "qdl",
+    "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   }
