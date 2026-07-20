@@ -165,6 +165,7 @@ runs:
 
           cp "$build_dir/images/efi.bin" "$meta_dir"
           cp "$build_dir/images/dtb.bin" "$meta_dir"
+          cp "$workspace/../kobj/vmlinux" "$meta_dir"
           if [ "$storage" = "spinor" ]; then
             if [ -d "$meta_dir/spinor" ]; then
               cp "$build_dir/images/dtb.bin" "$meta_dir/spinor/dtb.bin"
