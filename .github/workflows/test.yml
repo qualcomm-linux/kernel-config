@@ -117,8 +117,21 @@ jobs:
       - name: Submit lava job
         id: submit_job
         run: |
+          set -euo pipefail
           cd ../job_render
-          job_id=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs submit ./renders/lava_job_definition.yaml")
+          submit_output="$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs submit ./renders/lava_job_definition.yaml" 2>&1)" || {
+            echo "$submit_output"
+            echo "summary=:x: Lava job submission failed." >> "$GITHUB_OUTPUT"
+            exit 1
+          }
+          echo "$submit_output"
+          job_id="$(echo "$submit_output" | awk '/^[0-9]+$/ { id=$1 } END { print id }')"
+          if [ -z "$job_id" ]; then
+            echo "ERROR: LAVA submission did not return a numeric job ID."
+            echo "$submit_output"
+            echo "summary=:x: Lava job submission failed." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           job_url="https://lava-oss.qualcomm.com/scheduler/job/$job_id"
           echo "job_id=$job_id" >> $GITHUB_OUTPUT
           echo "job_url=$job_url" >> $GITHUB_OUTPUT
@@ -127,6 +140,7 @@ jobs:
 
       - name: Check lava job results
         id: check_job
+        if: steps.submit_job.outputs.job_id != ''
         run: |
           STATE=""
           START_TIME=$(date +%s)
@@ -187,7 +201,7 @@ jobs:
           fi
 
       - name: Fetch LAVA results JSON
-        if: success() || failure()
+        if: (success() || failure()) && steps.submit_job.outputs.job_id != ''
         id: fetch_results
         run: |
           set -e
@@ -222,6 +236,10 @@ jobs:
         run: |
           if [ "${{ steps.create_job_definition.conclusion }}" == 'failure' ]; then
             status=":x: Test job failed"
+          elif [ "${{ steps.submit_job.conclusion }}" == 'failure' ]; then
+            status="${{ steps.submit_job.outputs.summary }}"
+            job_url=""
+            job_id=""
           else
             status="${{ steps.check_job.outputs.summary }}"
             job_url="${{ steps.submit_job.outputs.job_url }}"
