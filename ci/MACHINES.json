@@ -140,6 +140,6 @@
     "flash_type": "qdl",
     "storage": "ufs",
     "hypervisor": "gunyah",
-    "branches": ["qcom-next-staging", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   }
 }
