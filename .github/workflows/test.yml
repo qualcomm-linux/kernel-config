@@ -44,8 +44,15 @@ on:
         type: string
         required: true
 
+      image_type:
+        description: Yocto qcomflash image type
+        type: string
+        required: false
+        default: multimedia
+
 jobs:
   test:
+    name: Test ${{ matrix.rootfs_matrix.machine }} ${{ inputs.image_type }}
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
@@ -108,6 +115,7 @@ jobs:
           pr_number: ${{ inputs.pr_number }}
           flash_type: ${{ steps.flash.outputs.flash_type }}
           build_type: ${{ inputs.build_type }}
+          image_type: ${{ inputs.image_type }}
         env:
           FIRMWARE: ${{ matrix.rootfs_matrix.firmwareid }}
           MACHINE: ${{ matrix.rootfs_matrix.machine }}
@@ -206,6 +214,7 @@ jobs:
         run: |
           set -e
           MACHINE="${{ matrix.rootfs_matrix.machine }}"
+          IMAGE_TYPE="${{ inputs.image_type }}"
           SUITE_NAME="LAVA-${MACHINE}"
           IN="results.json"
 
@@ -228,7 +237,7 @@ jobs:
                       name: .name,
                       result: .result
                   })
-              ' "$IN" > lava-results/Tests-${MACHINE}.json
+              ' "$IN" > "lava-results/Tests-${MACHINE}-${IMAGE_TYPE}.json"
 
       - name: Update summary
         if: success() || failure()
@@ -252,19 +261,19 @@ jobs:
           </details>
           '
           echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
-          JOB_INFO="- [Job $job_id on ${{ matrix.rootfs_matrix.machine }}]($job_url)"
+          JOB_INFO="- [${{ inputs.image_type }} Job $job_id on ${{ matrix.rootfs_matrix.machine }}]($job_url)"
           echo -e "$JOB_INFO" > job_info.md
 
       - name: Upload Job Info Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: job_info_${{ matrix.rootfs_matrix.machine }}
+          name: job_info_${{ matrix.rootfs_matrix.machine }}_${{ inputs.image_type }}
           path: job_info.md
 
       - name: Upload Lava Json File
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Tests-${{ matrix.rootfs_matrix.machine }}
+          name: Tests-${{ matrix.rootfs_matrix.machine }}-${{ inputs.image_type }}
           path: lava-results/*.json

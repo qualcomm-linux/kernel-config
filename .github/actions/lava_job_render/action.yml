@@ -21,6 +21,10 @@ inputs:
   build_type:
     description: Build type kbdev/Yocto
     required: false
+  image_type:
+    description: "Yocto qcomflash image type: multimedia or proprietary"
+    required: false
+    default: multimedia
 
 runs:
   using: "composite"
@@ -30,13 +34,16 @@ runs:
       uses: actions/github-script@v7
       env:
         FLASH_TYPE: ${{ inputs.flash_type }}
+        IMAGE_TYPE: ${{ inputs.image_type }}
       with:
         script: |
           const fs = require('fs');
           const p = require('path');
 
           const flashType = (process.env.FLASH_TYPE || 'qdl').toLowerCase();
+          const imageType = (process.env.IMAGE_TYPE || 'multimedia').toLowerCase();
           console.log(`Flash type: ${flashType}`);
+          console.log(`Image type: ${imageType}`);
           // Helper function to find URL by filename
           function findUrlByFilename(filename) {
             for (const [path, url] of Object.entries(data)) {
@@ -78,9 +85,21 @@ runs:
 
             const dtbFilename = `${process.env.MACHINE}.dtb`;
             const dtbUrl = findUrlByFilename(dtbFilename);
-            rootfs_name = `qcom-multimedia-image-${process.env.rootfs}.rootfs.qcomflash.tar.gz`;
+            let rootfs_name;
+            if (imageType === 'proprietary') {
+              rootfs_name = `qcom-multimedia-proprietary-image-${process.env.rootfs}.rootfs.qcomflash.tar.gz`;
+            } else if (imageType === 'multimedia') {
+              rootfs_name = `qcom-multimedia-image-${process.env.rootfs}.rootfs.qcomflash.tar.gz`;
+            } else {
+              core.setFailed(`Invalid image_type '${imageType}'. Allowed: multimedia, proprietary`);
+              return;
+            }
             core.setOutput('rootfs_name', rootfs_name);
             const rootfsurl = findUrlByFilename(rootfs_name);
+            if (!rootfsurl) {
+              core.setFailed(`URL not found in presigned_urls.json for ${rootfs_name}`);
+              return;
+            }
 
             core.setOutput('rootfsurl', rootfsurl);
             core.setOutput('dtb_url', dtbUrl);
@@ -121,6 +140,7 @@ runs:
       env:
         FLASH_TYPE: ${{ inputs.flash_type }}
         BUILD_TYPE: ${{ inputs.build_type }}
+        IMAGE_TYPE: ${{ inputs.image_type }}
       run: |
         flash_type="${FLASH_TYPE:-qdl}"
         flash_type="$(echo "$flash_type" | tr '[:upper:]' '[:lower:]')"
@@ -129,6 +149,10 @@ runs:
         build_type="${BUILD_TYPE:-yocto}"
         build_type="$(echo "$build_type" | tr '[:upper:]' '[:lower:]')"
         echo "Build type: $build_type"
+
+        image_type="${IMAGE_TYPE:-multimedia}"
+        image_type="$(echo "$image_type" | tr '[:upper:]' '[:lower:]')"
+        echo "Image type: $image_type"
 
         major=$(echo "${{ inputs.kernel_version }}" | cut -d. -f1)
         patchlevel=$(echo "${{ inputs.kernel_version }}" | cut -d. -f2 | cut -d- -f1)
@@ -152,12 +176,13 @@ runs:
           -e extra="$extra" \
           -e branch="${{ inputs.branch }}" \
           -e pr_number="${{ inputs.pr_number }}" \
+          -e image_type="$image_type" \
           ${{ inputs.docker_image }} \
           jq '
               .artifacts.metadata = env.metadata_url
             | .id = env.commit_SHA
-            | .name = "kernel-qli"
-            | .data.kernel_revision.describe = ("PR:"+env.pr_number + ", Branch:" + env.branch + ", Kernel Version:" + env.kernel_version)
+            | .name = (if env.image_type == "proprietary" then "kernel-qli-proprietary" else "kernel-qli" end)
+            | .data.kernel_revision.describe = ("PR:"+env.pr_number + ", Branch:" + env.branch + ", Kernel Version:" + env.kernel_version + ", Image:" + env.image_type)
             | .data.kernel_revision.commit_tags = [env.commit_tag]
             | .data.kernel_revision.commit = env.commit_SHA
             | .data.kernel_revision.version.version = (env.major | tonumber)
@@ -236,13 +261,24 @@ runs:
       shell: bash
       env:
         FLASH_TYPE: ${{ inputs.flash_type }}
+        BUILD_TYPE: ${{ inputs.build_type }}
+        IMAGE_TYPE: ${{ inputs.image_type }}
       run: |
         cd ../job_render
         mkdir -p renders
+        rm -f renders/lava_job_definition*.yaml
 
         flash_type="${FLASH_TYPE:-qdl}"
         flash_type="$(echo "$flash_type" | tr '[:upper:]' '[:lower:]')"
         echo "Flash type: $flash_type"
+
+        build_type="${BUILD_TYPE:-yocto}"
+        build_type="$(echo "$build_type" | tr '[:upper:]' '[:lower:]')"
+        echo "Build type: $build_type"
+
+        image_type="${IMAGE_TYPE:-multimedia}"
+        image_type="$(echo "$image_type" | tr '[:upper:]' '[:lower:]')"
+        echo "Image type: $image_type"
 
         if [[ "$flash_type" == "fastboot" ]]; then
           export TARGET="${{ env.LAVA_NAME }}"
@@ -253,8 +289,12 @@ runs:
           python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge
         elif [[ "$flash_type" == "qdl" ]]; then
           EXTRA_ARGS=""
-          if [[ "${{ inputs.build_type }}" == "yocto" ]]; then
-            EXTRA_ARGS="--meta-qcom_PreMerge --meta-qcom"
+          if [[ "$build_type" == "yocto" ]]; then
+            if [[ "$image_type" == "proprietary" ]]; then
+              EXTRA_ARGS="--meta-qcom-nightly_config2 --meta-qcom"
+            else
+              EXTRA_ARGS="--meta-qcom-nightly_config1 --meta-qcom"
+            fi
           else
             EXTRA_ARGS="--qcom-next-ci-premerge"
           fi

@@ -92,17 +92,36 @@ jobs:
           APPID: ${{ secrets.APPID }}
           PVK: ${{ secrets.PVK }}
 
+  test:
+    needs: [init-status, loading, build_yocto]
+    strategy:
+      fail-fast: false
+      matrix:
+        image_type: [multimedia, proprietary]
+    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
+    secrets: inherit
+    with:
+      docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
+      rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
+      kernel_version: ${{ needs.build_yocto.outputs.kernel_version }}
+      commit_SHA: ${{ inputs.sha }}
+      branch: ${{ inputs.ref }}
+      pr_number: ${{ inputs.pr }}
+      flash_type: "qdl"
+      build_type: "yocto"
+      image_type: ${{ matrix.image_type }}
+
   final-status:
     name: Finalize Status
     if: always()
     runs-on: ubuntu-latest
-    needs: [build_yocto, check_run]
+    needs: [build_yocto, check_run, test]
     steps:
       - name: Set final status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ github.event.inputs.sha || github.sha }}
-          action_mode: ${{ needs.build_yocto.result }}
+          action_mode: ${{ needs.build_yocto.result == 'success' && needs.test.result || needs.build_yocto.result }}
           check_name: "Yocto Build Generation"
           repo: ${{ github.event.inputs.repo || github.repository }}
           GH_TOKEN: ${{ secrets.PAT }}
