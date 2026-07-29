@@ -141,6 +141,18 @@ jobs:
           commit_url="https://github.com/${{ inputs.repo }}/commit/${sha}"
           run_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
+          declare -A JOB_URLS=()
+          if ls job-info/*.md 1>/dev/null 2>&1; then
+            while IFS= read -r line; do
+              if [[ "$line" =~ ^-\ \[([^[:space:]]+)\ Job\ [^]]+\ on\ ([^]]+)\]\(([^)]+)\) ]]; then
+                image_type="${BASH_REMATCH[1]}"
+                machine="${BASH_REMATCH[2]}"
+                job_url="${BASH_REMATCH[3]}"
+                JOB_URLS["${machine}-${image_type}"]="$job_url"
+              fi
+            done < <(cat job-info/*.md)
+          fi
+
           {
             echo "# Nightly LAVA Test Report"
             echo ""
@@ -170,7 +182,13 @@ jobs:
               TESTS=$(jq -r '.[].name' "${FILES[@]}" | sort -u)
 
               printf "| Test Case "
-              for t in "${TARGETS[@]}"; do printf "| %s " "$t"; done
+              for t in "${TARGETS[@]}"; do
+                target_label="$t"
+                if [ -n "${JOB_URLS[$t]:-}" ]; then
+                  target_label="[$t](${JOB_URLS[$t]})"
+                fi
+                printf "| %s " "$target_label"
+              done
               printf "|\n"
 
               printf "| --- "
