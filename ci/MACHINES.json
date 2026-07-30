@@ -141,5 +141,31 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+  },
+  "purwa-iot-evk": {
+    "machine": "purwa-iot-evk",
+    "firmware": "",
+    "lavaname": "purwa-iot-evk",
+    "target": "purwa-iot-evk",
+    "buildid": "",
+    "firmwareid": "",
+    "rootfs": "iq-x5121-evk",
+    "flash_type": "qdl",
+    "storage": "spinor",
+    "hypervisor": "gunyah",
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+  },
+  "shikra-evk": {
+    "machine": "shikra-iqs-evk",
+    "firmware": "",
+    "lavaname": "shikra-iqs-evk",
+    "target": "shikra-iqs-evk",
+    "buildid": "",
+    "firmwareid": "",
+    "rootfs": "shikra-evk",
+    "flash_type": "qdl",
+    "storage": "ufs",
+    "hypervisor": "gunyah",
+    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
   }
 }
