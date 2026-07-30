@@ -129,7 +129,6 @@ jobs:
         with:
           pattern: job_info_*
           path: job-info
-          merge-multiple: true
 
       - name: Generate report
         run: |
@@ -144,7 +143,8 @@ jobs:
 
           declare -A JOB_URLS=()
           job_info_re='^- \[([^[:space:]]+) Job [^]]+ on ([^]]+)\]\(([^)]*)\)'
-          if ls job-info/*.md 1>/dev/null 2>&1; then
+          mapfile -t JOB_INFO_FILES < <(find job-info -type f -name '*.md' 2>/dev/null | sort || true)
+          if [ ${#JOB_INFO_FILES[@]} -gt 0 ]; then
             while IFS= read -r line; do
               if [[ "$line" =~ $job_info_re ]]; then
                 image_type="${BASH_REMATCH[1]}"
@@ -152,7 +152,7 @@ jobs:
                 job_url="${BASH_REMATCH[3]}"
                 JOB_URLS["${machine}-${image_type}"]="$job_url"
               fi
-            done < <(cat job-info/*.md)
+            done < <(cat "${JOB_INFO_FILES[@]}")
           fi
 
           {
