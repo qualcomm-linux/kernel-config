@@ -21,7 +21,7 @@ on:
         description: base build or tip
         type: string
         default: tip
-        required: true
+        required: false
       pr_list:
         description: list of open PR's
         type: string
@@ -42,21 +42,6 @@ jobs:
           repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
 
-  init:
-    name: Initialize Workflow
-    needs: init-status
-    runs-on: ubuntu-latest
-    steps:
-      - name: Update Summary
-        run: |
-          echo "SHA : ${{ inputs.ref }}"
-          echo "## Yocto Build Generation" >> $GITHUB_STEP_SUMMARY
-          echo "- Pull Request Number: \`${{ inputs.pr || 'Nightly Build on Tip' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Head Commit SHA: \`${{ inputs.sha || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Target Branch: \`${{ inputs.ref || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Target Repository: \`${{ inputs.repo || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Base: \`${{ inputs.base || 'N/A' }}\`" >> $GITHUB_STEP_SUMMARY
-
   loading:
     name: Load Parameters
     needs: init-status
@@ -67,7 +52,7 @@ jobs:
 
   build_yocto:
     name: Build Yocto
-    needs: [init-status, init, loading]
+    needs: [init-status, loading]
     uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
     secrets: inherit
     with:
@@ -80,7 +65,7 @@ jobs:
 
   check_run:
     runs-on: ubuntu-latest
-    needs: [init-status, init, loading, build_yocto]
+    needs: [init-status, loading, build_yocto]
     steps:
       - name: Post check run
         uses: qualcomm-linux/kernel-config/.github/actions/check_run@main
@@ -114,11 +99,12 @@ jobs:
   nightly_report:
     name: Nightly Test Report
     if: always()
-    needs: [test]
+    needs: [build_yocto, test]
     runs-on: ubuntu-latest
     steps:
       - name: Download all test JSON artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: Tests-*
           path: all-json
@@ -126,6 +112,7 @@ jobs:
 
       - name: Download all job info artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: job_info_*
           path: job-info
@@ -139,6 +126,11 @@ jobs:
           short_sha="${sha:0:7}"
           commit_url="https://github.com/${{ inputs.repo }}/commit/${sha}"
           run_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          s3_location="${{ needs.build_yocto.outputs.artifacts_location }}"
+          s3_path="N/A"
+          if [ -n "$s3_location" ]; then
+            s3_path="s3://qli-prd-kernel-gh-artifacts/${s3_location}/"
+          fi
 
           declare -A JOB_URLS=()
           job_info_re='^- \[([^[:space:]]+) Job [^]]+ on ([^]]+)\]\(([^)]*)\)'
@@ -155,20 +147,16 @@ jobs:
           fi
 
           {
-            echo "# Nightly LAVA Test Report"
+            echo "# Yocto Build and Test Report"
             echo ""
-            echo "| | |"
+            echo "## Build Artifacts"
+            echo ""
+            echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| **Branch** | \`${{ inputs.ref }}\` |"
-            echo "| **Commit** | [\`${short_sha}\`](${commit_url}) |"
-            echo "| **Run** | [${run_url}](${run_url}) |"
+            echo "| AWS S3 Path | \`${s3_path}\` |"
+            echo "| Commit | [\`${short_sha}\`](${commit_url}) |"
+            echo "| Run | [${run_url}](${run_url}) |"
             echo ""
-
-            if ls job-info/*.md 1>/dev/null 2>&1; then
-              echo "## LAVA Jobs"
-              cat job-info/*.md
-              echo ""
-            fi
 
             mapfile -t FILES < <(ls "$INPUT_DIR"/*.json 2>/dev/null || true)
             if [ ${#FILES[@]} -gt 0 ]; then
@@ -230,6 +218,11 @@ jobs:
                   printf "| %s | %s | %s | %s | %s |\n" "$t" "$pass" "$fail" "$skip" "$total"
                 fi
               done
+
+            else
+              echo "## Test Matrix"
+              echo ""
+              echo "No test result artifacts were found."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

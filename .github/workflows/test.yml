@@ -254,13 +254,6 @@ jobs:
             job_url="${{ steps.submit_job.outputs.job_url }}"
             job_id="${{ steps.submit_job.outputs.job_id }}"
           fi
-          SUMMARY='
-          <details><summary><i>'${status}'</i></summary>
-          <br>
-          JOB ID: <a href="${job_url}">'${job_id}'</a>
-          </details>
-          '
-          echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
           JOB_INFO="- [${{ inputs.image_type }} Job $job_id on ${{ matrix.rootfs_matrix.machine }}]($job_url)"
           echo -e "$JOB_INFO" > job_info.md
 

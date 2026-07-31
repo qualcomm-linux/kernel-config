@@ -280,21 +280,3 @@ runs:
         mode: multi-upload
       env:
         machine: ${{ inputs.rootfs }}_
-
-    - name: Update Summary
-      if: always()
-      shell: bash
-      run: |
-        if [ "${{ steps.upload_artifacts.outcome }}" == "success" ]; then
-          status="Success"
-          emoji=":heavy_check_mark:"
-        else
-          status="Failure"
-          emoji=":x:"
-        fi
-        echo "### Build completed successfully." >> $GITHUB_STEP_SUMMARY
-        echo "- Artifacts upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
-        echo "- Build logs upload to AWS s3 location: **$status** $emoji" >> $GITHUB_STEP_SUMMARY
-        if [ $status == "Success" ]; then
-          echo "- Check github artifacts for presigned URLs JSON file containing link to the logs and artifacts." >> $GITHUB_STEP_SUMMARY
-        fi
