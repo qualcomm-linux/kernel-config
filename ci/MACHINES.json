@@ -145,7 +145,7 @@
   "purwa-iot-evk": {
     "machine": "purwa-iot-evk",
     "firmware": "",
-    "lavaname": "purwa-iot-evk",
+    "lavaname": "purwa-evk",
     "target": "purwa-iot-evk",
     "buildid": "",
     "firmwareid": "iq-x5121-evk",
