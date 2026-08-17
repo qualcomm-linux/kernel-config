@@ -1,0 +1,377 @@
+name: Promote kernel tag to meta-qcom
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_type:
+        description: "Kernel flavour to promote"
+        type: choice
+        required: true
+        options:
+          - qcom-next
+          - qcom-6.18
+      tag:
+        description: "Kernel tag to promote (e.g. qcom-next-7.1-rc6-20260609 or qcom-6.18.y-20260609)"
+        type: string
+        required: true
+      linux_version:
+        description: "LINUX_VERSION value for qcom-next recipe (e.g. 7.0+7.1-rc6). Ignored for qcom-6.18."
+        type: string
+        required: false
+      promotion_branch:
+        description: "Fork branch to push/update (optional; defaults to promote-<tag>)"
+        type: string
+        required: false
+
+jobs:
+  promote:
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Clone the kernel repo so we can resolve the tag SHA and build changelog ──
+      - name: Clone kernel repository
+        uses: actions/checkout@v4
+        with:
+          repository: qualcomm-linux/kernel
+          path: kernel-src
+          filter: blob:none
+          fetch-tags: true
+          token: ${{ secrets.PAT || github.token }}
+
+      # ── Resolve the SHA that the supplied tag points to ──
+      - name: Resolve tag SHA
+        id: resolve_tag
+        run: |
+          cd kernel-src
+          if ! git rev-parse "refs/tags/${{ inputs.tag }}^{commit}" > /dev/null 2>&1; then
+            echo "ERROR: tag '${{ inputs.tag }}' not found in qualcomm-linux/kernel."
+            exit 1
+          fi
+          tag_sha=$(git rev-parse "refs/tags/${{ inputs.tag }}^{commit}")
+          echo "tag_sha=$tag_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag '${{ inputs.tag }}' -> $tag_sha"
+
+      # ── Clone meta-qcom and set up the promotion branch ──
+      - name: Clone meta-qcom
+        uses: actions/checkout@v4
+        with:
+          repository: qualcomm-linux/meta-qcom
+          path: meta-qcom
+          fetch-depth: 0
+          token: ${{ secrets.SPAT }}
+
+      - name: Configure meta-qcom git identity and fork remote
+        run: |
+          cd meta-qcom
+          git config user.email "sgaud@qti.qualcomm.com"
+          git config user.name  "Salendarsingh Gaud"
+          git remote add sgaud-quic https://github.com/sgaud-quic/meta-qcom.git
+          git fetch sgaud-quic
+
+      - name: Resolve promotion branch
+        env:
+          REQUESTED_BRANCH: ${{ inputs.promotion_branch }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$REQUESTED_BRANCH" ]]; then
+            BRANCH="$REQUESTED_BRANCH"
+          else
+            BRANCH="promote-${TAG}"
+          fi
+
+          BRANCH=$(printf '%s' "$BRANCH" \
+            | sed -E 's|[^A-Za-z0-9._/-]+|-|g; s|/+|/|g; s|^/+||; s|/+$||')
+
+          if [[ -z "$BRANCH" ]]; then
+            echo "ERROR: resolved promotion branch is empty."
+            exit 1
+          fi
+
+          echo "Promotion branch: $BRANCH"
+          echo "promo_branch=$BRANCH" >> "$GITHUB_ENV"
+
+      # ════════════════════════════════════════════════════════════════
+      # qcom-next promotion
+      # Changes: LINUX_VERSION, # tag: comment, SRCREV
+      # ════════════════════════════════════════════════════════════════
+      - name: Update linux-qcom-next recipe
+        if: ${{ inputs.kernel_type == 'qcom-next' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${{ inputs.linux_version }}" ]]; then
+            echo "ERROR: linux_version input is required for qcom-next promotion."
+            exit 1
+          fi
+
+          RECIPE="meta-qcom/recipes-kernel/linux/linux-qcom-next_git.bb"
+          NEW_SHA="${{ steps.resolve_tag.outputs.tag_sha }}"
+          NEW_TAG="${{ inputs.tag }}"
+          NEW_VER="${{ inputs.linux_version }}"
+
+          # Derive the kernel source version from the Makefile at the new tag.
+          cd kernel-src
+          KERNEL_VER=$(git show "$NEW_SHA:Makefile" | awk '
+            /^VERSION =/{v=$3}
+            /^PATCHLEVEL =/{p=$3}
+            /^SUBLEVEL =/{s=$3}
+            /^EXTRAVERSION =/{e=$3}
+            END{
+              if (s != "" && s != "0")
+                print v "." p "." s e
+              else
+                print v "." p e
+            }')
+          cd "$GITHUB_WORKSPACE"
+
+          # Capture old values for logging
+          OLD_TAG=$(grep -oP '(?<=# tag: ).*' "$RECIPE" || true)
+          OLD_SHA=$(grep -oP '(?<=SRCREV \?= ").*(?=")' "$RECIPE" || true)
+
+          echo "Old tag : $OLD_TAG  ->  New tag : $NEW_TAG"
+          echo "Old SHA : $OLD_SHA  ->  New SHA : $NEW_SHA"
+          echo "Recipe LINUX_VERSION: $NEW_VER"
+          echo "Kernel version      : $KERNEL_VER"
+
+          # Update LINUX_VERSION, tag comment, SRCREV
+          sed -i "s|^LINUX_VERSION ?= \".*\"|LINUX_VERSION ?= \"${NEW_VER}\"|"  "$RECIPE"
+          sed -i "s|^# tag: .*|# tag: ${NEW_TAG}|"                              "$RECIPE"
+          sed -i "s|^SRCREV ?= \".*\"|SRCREV ?= \"${NEW_SHA}\"|"                "$RECIPE"
+
+          echo "old_tag=$OLD_TAG" >> "$GITHUB_ENV"
+          echo "old_sha=$OLD_SHA" >> "$GITHUB_ENV"
+          echo "kernel_version=$KERNEL_VER" >> "$GITHUB_ENV"
+
+      - name: Build qcom-next changelog
+        if: ${{ inputs.kernel_type == 'qcom-next' }}
+        run: |
+          set -euo pipefail
+          cd kernel-src
+
+          OLD_TAG="$old_tag"
+          OLD_SHA="$old_sha"
+          NEW_SHA="${{ steps.resolve_tag.outputs.tag_sha }}"
+          CHANGELOG="$GITHUB_WORKSPACE/changelog.txt"
+          ROWS="$GITHUB_WORKSPACE/qcom-next-topic-rows.txt"
+
+          rm -f "$CHANGELOG" "$ROWS"
+
+          extract_topic_rows() {
+            git log -1 --format=%B "$1" | awk '
+              BEGIN { body = 0 }
+              NF == 0 {
+                body = 1
+                next
+              }
+              body && NF == 3 &&
+                $1 ~ /^[A-Za-z0-9._\/-]+$/ &&
+                $2 ~ /^[0-9a-fA-F]{7,40}$/ &&
+                $3 ~ /^[0-9]+$/ {
+                  print $1, $2, $3
+                }
+            '
+          }
+
+          extract_topic_rows "$NEW_SHA" > "$ROWS"
+
+          # Fetch qcom-next so short topic SHAs from the commit message can be
+          # expanded, and so the branch tip can be used when it is the promoted
+          # commit.
+          if git fetch --filter=blob:none origin qcom-next; then
+            branch_sha=$(git rev-parse FETCH_HEAD)
+            if [[ ! -s "$ROWS" && "$branch_sha" == "$NEW_SHA" ]]; then
+              extract_topic_rows FETCH_HEAD > "$ROWS"
+            fi
+          fi
+
+          if [[ -s "$ROWS" ]]; then
+            {
+              printf '%-37s %-36s %s\n' "Name" "SHA" "Commits"
+              printf '%s\n' "------------------------------------------------------------------------------------"
+              while read -r name sha commits; do
+                full_sha=$(git rev-parse --verify "${sha}^{commit}" 2>/dev/null || printf '%s' "$sha")
+                printf '%-25s %-40s %10s\n' "$name" "$full_sha" "$commits"
+              done < "$ROWS"
+            } > "$CHANGELOG"
+          else
+            echo "No qcom-next topic summary found; falling back to git log range."
+            RANGE_START="$OLD_SHA"
+            if [[ -n "$OLD_TAG" ]] && git rev-parse "refs/tags/${OLD_TAG}^{commit}" > /dev/null 2>&1; then
+              RANGE_START="refs/tags/${OLD_TAG}"
+            fi
+            git log --no-merges --pretty=format:"%s" "${RANGE_START}..${NEW_SHA}" > "$CHANGELOG"
+          fi
+
+          echo "Changelog has $(wc -l < "$CHANGELOG") entries."
+
+      - name: Commit and push qcom-next update
+        if: ${{ inputs.kernel_type == 'qcom-next' }}
+        run: |
+          set -euo pipefail
+          cd meta-qcom
+
+          BRANCH="$promo_branch"
+          git checkout -B "$BRANCH" origin/master
+
+          git add recipes-kernel/linux/linux-qcom-next_git.bb
+          CHANGELOG=$(cat "$GITHUB_WORKSPACE/changelog.txt" 2>/dev/null || echo "")
+          git commit \
+            -m "linux-qcom-next: update to tag ${{ inputs.tag }}" \
+            -m "Move to the latest linux-qcom-next release tag ${{ inputs.tag }},"$'\n'"which corresponds to kernel version v${kernel_version}" \
+            -m "" \
+            -m "Changelog:" \
+            -m "${CHANGELOG}" \
+            -m "" \
+            -m "Signed-off-by: Salendarsingh Gaud <sgaud@qti.qualcomm.com>"
+
+          git push sgaud-quic HEAD:"$BRANCH" -f
+
+      # ════════════════════════════════════════════════════════════════
+      # qcom-6.18 promotion
+      # Changes: # tag: comment, SRCREV
+      # PR body includes a changelog from git log between old and new tag
+      # ════════════════════════════════════════════════════════════════
+      - name: Update linux-qcom-6.18 recipe
+        if: ${{ inputs.kernel_type == 'qcom-6.18' }}
+        run: |
+          set -euo pipefail
+
+          RECIPE="meta-qcom/recipes-kernel/linux/linux-qcom_6.18.bb"
+          NEW_SHA="${{ steps.resolve_tag.outputs.tag_sha }}"
+          NEW_TAG="${{ inputs.tag }}"
+
+          # Capture old SRCREV for changelog range
+          OLD_SHA=$(grep -oP '(?<=SRCREV \?= ").*(?=")' "$RECIPE" || true)
+
+          # Derive LINUX_VERSION from the kernel Makefile at the new tag
+          cd kernel-src
+          VER=$(git show "$NEW_SHA:Makefile" | awk '/^VERSION =/{v=$3} /^PATCHLEVEL =/{p=$3} /^SUBLEVEL =/{s=$3} END{print v"."p"."s}')
+          cd "$GITHUB_WORKSPACE"
+
+          echo "Old SHA      : $OLD_SHA  ->  New SHA : $NEW_SHA"
+          echo "New tag      : $NEW_TAG"
+          echo "LINUX_VERSION: $VER"
+
+          # Update LINUX_VERSION, tag comment (no space after colon), SRCREV
+          sed -i "s|^LINUX_VERSION ?= \".*\"|LINUX_VERSION ?= \"${VER}\"|" "$RECIPE"
+          sed -i "s|^# tag:.*|# tag:${NEW_TAG}|"                               "$RECIPE"
+          sed -i "s|^SRCREV ?= \".*\"|SRCREV ?= \"${NEW_SHA}\"|"           "$RECIPE"
+
+          echo "old_sha=$OLD_SHA" >> "$GITHUB_ENV"
+          echo "linux_version=$VER" >> "$GITHUB_ENV"
+
+      - name: Build 6.18 changelog
+        if: ${{ inputs.kernel_type == 'qcom-6.18' }}
+        run: |
+          set -euo pipefail
+          cd kernel-src
+
+          OLD_SHA="$old_sha"
+          NEW_SHA="${{ steps.resolve_tag.outputs.tag_sha }}"
+          STABLE_TAG="v${linux_version}"
+
+          # Ensure the full commit graph is present for both endpoints.
+          git fetch --filter=blob:none origin qcom-6.18.y
+
+          # Fetch the upstream stable tag so its commits can be excluded.
+          # Try the qcom kernel repo first; fall back to Torvalds tree if not present.
+          if ! git fetch --filter=blob:none origin "refs/tags/${STABLE_TAG}:refs/tags/${STABLE_TAG}" 2>/dev/null; then
+            echo "Tag ${STABLE_TAG} not in qcom repo, fetching from upstream kernel..."
+            git fetch --filter=blob:none \
+              https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git \
+              "refs/tags/${STABLE_TAG}:refs/tags/${STABLE_TAG}"
+          fi
+
+          # Commits in OLD..NEW that are NOT reachable from the stable tag.
+          # This excludes all LTS backport commits merged via the stable tag.
+          git log --no-merges --pretty=format:"%s" "${OLD_SHA}..${NEW_SHA}" "^${STABLE_TAG}" \
+            > "$GITHUB_WORKSPACE/changelog.txt"
+
+          echo "Changelog has $(wc -l < "$GITHUB_WORKSPACE/changelog.txt") entries."
+
+      - name: Commit and push 6.18 update
+        if: ${{ inputs.kernel_type == 'qcom-6.18' }}
+        run: |
+          set -euo pipefail
+          cd meta-qcom
+
+          BRANCH="$promo_branch"
+          git checkout -B "$BRANCH" origin/master
+
+          git add recipes-kernel/linux/linux-qcom_6.18.bb
+          CHANGELOG=$(cat "$GITHUB_WORKSPACE/changelog.txt" 2>/dev/null || echo "")
+          git commit \
+            -m "linux-qcom-6.18 : update to tag ${{ inputs.tag }} v${linux_version}" \
+            -m "Move to the latest linux-qcom-6.18 release tag ${{ inputs.tag }}" \
+            -m "" \
+            -m "Changelog:" \
+            -m "${CHANGELOG}" \
+            -m "" \
+            -m "Signed-off-by: Salendarsingh Gaud <sgaud@qti.qualcomm.com>"
+
+          git push sgaud-quic HEAD:"$BRANCH" -f
+
+      # ── Create or update the PR on qualcomm-linux/meta-qcom ──
+      # Must run from inside meta-qcom/ so gh resolves repo context correctly.
+      - name: Install gh CLI
+        run: which gh || sudo apt-get install -y gh
+
+      - name: Create or update PR on meta-qcom
+        env:
+          GH_TOKEN: ${{ secrets.SPAT }}
+        run: |
+          set -euo pipefail
+          cd meta-qcom
+
+          BRANCH="$promo_branch"
+          TAG="${{ inputs.tag }}"
+
+          if [[ "${{ inputs.kernel_type }}" == "qcom-next" ]]; then
+            ROWS="$GITHUB_WORKSPACE/qcom-next-topic-rows.txt"
+            PR_TITLE="linux-qcom-next: update to tag ${TAG}"
+            if [[ -s "$ROWS" ]]; then
+              PR_CHANGELOG="$(
+                printf '| Name | SHA | Commits |\n'
+                printf '|------|-----|----------|\n'
+                while read -r name sha commits; do
+                  full_sha=$(git -C "$GITHUB_WORKSPACE/kernel-src" rev-parse --verify "${sha}^{commit}" 2>/dev/null || printf '%s' "$sha")
+                  printf '| %s | `%s` | %s |\n' "$name" "$full_sha" "$commits"
+                done < "$ROWS"
+              )"
+            else
+              PR_CHANGELOG=$(cat "$GITHUB_WORKSPACE/changelog.txt" 2>/dev/null || echo "")
+            fi
+            PR_BODY="$(printf 'Move to the latest linux-qcom-next release tag %s, which corresponds to kernel version v%s\n\nChangelog:\n\n%s' "${TAG}" "${kernel_version}" "${PR_CHANGELOG}")"
+          else
+            CHANGELOG=$(cat "$GITHUB_WORKSPACE/changelog.txt" 2>/dev/null || echo "")
+            PR_TITLE="linux-qcom-6.18 : update to tag ${TAG} v${linux_version}"
+            PR_BODY="$(printf 'Move to the latest linux-qcom-6.18 release tag %s\n\nChangelog:\n%s' "${TAG}" "${CHANGELOG}")"
+          fi
+
+          EXISTING_PR=$(gh pr list \
+            --repo qualcomm-linux/meta-qcom \
+            --head "sgaud-quic:${BRANCH}" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [[ -n "$EXISTING_PR" ]]; then
+            echo "Updating existing PR #${EXISTING_PR} title and body."
+            gh pr edit "$EXISTING_PR" \
+              --repo qualcomm-linux/meta-qcom \
+              --title "$PR_TITLE" \
+              --body  "$PR_BODY"
+          else
+            echo "Creating new PR."
+            gh pr create \
+              --repo  qualcomm-linux/meta-qcom \
+              --head  "sgaud-quic:${BRANCH}" \
+              --base  master \
+              --title "$PR_TITLE" \
+              --body  "$PR_BODY"
+          fi
