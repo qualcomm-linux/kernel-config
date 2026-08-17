@@ -1,0 +1,130 @@
+name: Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description : Branch name which needs to be tagged
+        type: string
+        required: true
+      repo:
+        description: Repository Full name
+        type: string
+        required: true
+      sha:
+        description: "Commit SHA to tag (optional; tags HEAD of branch_name if omitted)"
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      branch_name:
+        description: Branch name which needs to be tagged
+        type: string
+        required: true
+      repo:
+        description: Repository Full name
+        type: string
+        required: true
+      sha:
+        description: "Commit SHA to tag (optional; tags HEAD of branch_name if omitted)"
+        type: string
+        required: false
+    outputs:
+      tag:
+        description: "The tag that was created (or already existed) at the target commit"
+        value: ${{ jobs.Tag.outputs.tag }}
+
+jobs:
+  Tag:
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    outputs:
+      tag: ${{ steps.create_tag.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone repositories
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.branch_name }}
+          path: kernel
+          fetch-depth: 0
+          token: ${{ secrets.PAT || github.token }}
+
+      - name: Resolve target commit
+        id: resolve_commit
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          if [[ -n "${{ inputs.sha }}" ]]; then
+            # Validate the SHA exists in the repo
+            if ! git cat-file -e "${{ inputs.sha }}^{commit}" 2>/dev/null; then
+              echo "ERROR: SHA '${{ inputs.sha }}' not found in repository."
+              exit 1
+            fi
+            target_sha="${{ inputs.sha }}"
+            echo "Targeting provided SHA: $target_sha"
+          else
+            target_sha=$(git rev-parse HEAD)
+            echo "No SHA provided, targeting HEAD: $target_sha"
+          fi
+          echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check if target commit is already tagged
+        id: head_tag_check
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          tags_at_target=$(git tag --points-at ${{ steps.resolve_commit.outputs.target_sha }})
+
+          if [[ -n "$tags_at_target" ]]; then
+            echo "Commit ${{ steps.resolve_commit.outputs.target_sha }} is already tagged with:"
+            echo "$tags_at_target"
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "tags=$tags_at_target" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+      - name: Print existing tag(s)
+        if: ${{ steps.head_tag_check.outputs.tagged == 'true' }}
+        run: |
+          echo "Tags at commit ${{ steps.resolve_commit.outputs.target_sha }}:"
+          echo "${{ steps.head_tag_check.outputs.tags }}"
+
+      - name: Create tag
+        if: ${{ steps.head_tag_check.outputs.tagged != 'true' }}
+        id: create_tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/kernel"
+          date_stamp="$(date +%Y%m%d)"
+
+          if [[ "${{ inputs.branch_name }}" == "qcom-next" ]]; then
+            kver=$(awk '/^VERSION[[:space:]]*=/{v=$3} /^PATCHLEVEL[[:space:]]*=/{p=$3} /^EXTRAVERSION[[:space:]]*=/{e=$3} END{printf "%s.%s%s", v, p, e}' Makefile)
+            tag_name="${{ inputs.branch_name }}-${kver}-${date_stamp}"
+          else
+            tag_name="${{ inputs.branch_name }}-${date_stamp}"
+          fi
+
+          TAGS=$(git tag -l "${tag_name}*")
+          if ! echo "$TAGS" | grep -q "^${tag_name}$"; then
+            echo "Tag not present... $tag_name"
+            echo "New tag name: $tag_name"
+          else
+            i=1
+            while echo "$TAGS" | grep -q "^${tag_name}\.${i}$"; do
+              ((i++))
+            done
+            tag_name="${tag_name}.${i}"
+            echo "Tag present... $tag_name"
+            echo "New tag name: $tag_name"
+          fi
+
+          git tag "$tag_name" ${{ steps.resolve_commit.outputs.target_sha }}
+          git push origin "$tag_name"
+          echo "Created tag: $tag_name"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
