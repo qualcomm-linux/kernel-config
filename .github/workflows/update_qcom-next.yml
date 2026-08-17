@@ -1,0 +1,81 @@
+name: Update qcom-next
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        type: string
+        default: 0
+        required: true
+      sha:
+        description: Head sha of the PR
+        type: string
+        required: true
+      ref:
+        description: Target branch
+        type: string
+        required: true
+      repo:
+        description: Target repository
+        type: string
+        default: qualcomm-linux/kernel
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-qcom-next
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Force update qcom-next
+    if: ${{ inputs.repo == 'qualcomm-linux/kernel' && (inputs.ref == 'qcom-next-staging' || inputs.ref == 'refs/heads/qcom-next-staging') }}
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+
+    steps:
+      - name: Checkout kernel qcom-next-staging
+        uses: actions/checkout@v4
+        with:
+          repository: qualcomm-linux/kernel
+          ref: qcom-next-staging
+          fetch-depth: 0
+          token: ${{ secrets.PAT || github.token }}
+
+      - name: Fetch promotion refs
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          git fetch origin \
+            +refs/heads/qcom-next-staging:refs/remotes/origin/qcom-next-staging \
+            +refs/heads/qcom-next:refs/remotes/origin/qcom-next
+          git checkout -B qcom-next-staging origin/qcom-next-staging
+
+      - name: Force update qcom-next
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          staging_sha="$(git rev-parse origin/qcom-next-staging)"
+          qcom_next_sha="$(git rev-parse origin/qcom-next)"
+
+          git push \
+            --force-with-lease=refs/heads/qcom-next:"$qcom_next_sha" \
+            origin \
+            "$staging_sha:refs/heads/qcom-next"
+
+          echo "Updated qcom-next to $staging_sha"
+
+  tag:
+    name: Tag qcom-next tip
+    needs: promote
+    uses: ./.github/workflows/tag.yml
+    with:
+      branch_name: qcom-next
+      repo: qualcomm-linux/kernel
+      sha: ${{ inputs.sha }}
+    secrets: inherit
