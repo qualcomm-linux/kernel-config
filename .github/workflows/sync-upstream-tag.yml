@@ -70,8 +70,9 @@ jobs:
           if [ -z "$tag" ]; then
             tag="$(git for-each-ref \
               --sort=-creatordate \
+              --count=1 \
               --format='%(refname:short)' \
-              'refs/tags/v*' | head -n 1)"
+              'refs/tags/v*')"
           fi
 
           if [ -z "$tag" ]; then
