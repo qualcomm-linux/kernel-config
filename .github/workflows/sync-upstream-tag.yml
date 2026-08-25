@@ -1,0 +1,356 @@
+---
+name: Sync Upstream Tag
+run-name: >-
+  ${{ inputs.tag_name != '' &&
+      format('push torvalds tag {0} to kernel main', inputs.tag_name) ||
+      'push latest torvalds tag to kernel main' }}
+
+on:
+  schedule:
+    # Every Monday at 02:00 UTC.
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Optional Torvalds Linux tag to push. Leave empty for latest tag.
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: Resolve the tag, but do not push main.
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  sync:
+    name: Push Torvalds tag to kernel main
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    steps:
+      - name: Configure git
+        shell: bash
+        run: |
+          git config --global user.name "QLI CI Bot"
+          git config --global user.email "qualcomm-linux@qualcomm.com"
+
+      - name: Clone qualcomm-linux/kernel main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          set -euo pipefail
+
+          git clone \
+            --filter=blob:none \
+            --branch main \
+            "https://x-access-token:${GH_TOKEN}@github.com/qualcomm-linux/kernel.git" \
+            kernel
+
+      - name: Fetch Torvalds Linux tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd kernel
+          git remote add torvalds https://github.com/torvalds/linux.git
+          git fetch --force --tags torvalds '+refs/tags/v*:refs/tags/v*'
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        env:
+          TAG_INPUT: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          cd kernel
+          tag="$TAG_INPUT"
+          if [ -z "$tag" ]; then
+            tag="$(git for-each-ref \
+              --sort=-creatordate \
+              --format='%(refname:short)' \
+              'refs/tags/v*' | head -n 1)"
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "ERROR: could not resolve a Torvalds Linux tag."
+            exit 1
+          fi
+
+          git rev-parse --verify "$tag^{commit}" >/dev/null
+          tag_sha="$(git rev-parse "$tag^{commit}")"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag_sha=$tag_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $tag ($tag_sha)"
+
+      - name: Check update
+        id: update
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd kernel
+          tag="${{ steps.tag.outputs.tag }}"
+          tag_sha="${{ steps.tag.outputs.tag_sha }}"
+          main_sha="$(git rev-parse HEAD)"
+
+          if [ "$main_sha" = "$tag_sha" ]; then
+            echo "kernel main already points at $tag."
+            echo "push_needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$main_sha" "$tag_sha"; then
+            echo "ERROR: pushing $tag directly to main would require a non-fast-forward update."
+            echo "Current main: $main_sha"
+            echo "Tag commit  : $tag_sha"
+            echo "Refusing to force-push main."
+            exit 1
+          fi
+
+          echo "kernel main can be fast-forwarded directly to $tag."
+          echo "push_needed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push kernel main
+        if: steps.update.outputs.push_needed == 'true' && !inputs.dry_run
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd kernel
+          git push origin "${{ steps.tag.outputs.tag_sha }}:refs/heads/main"
+
+      - name: Push kernel tag
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd kernel
+          tag="${{ steps.tag.outputs.tag }}"
+          tag_sha="${{ steps.tag.outputs.tag_sha }}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            remote_tag_sha="$(git ls-remote --tags origin "refs/tags/$tag" | awk '{print $1}')"
+            if [ "$remote_tag_sha" = "$tag_sha" ]; then
+              echo "Tag $tag already exists on qualcomm-linux/kernel."
+              exit 0
+            fi
+
+            echo "ERROR: tag $tag already exists on qualcomm-linux/kernel with a different SHA."
+            echo "Remote tag: $remote_tag_sha"
+            echo "Local tag : $tag_sha"
+            exit 1
+          fi
+
+          git push origin "refs/tags/$tag:refs/tags/$tag"
+
+      # ── kernel-topics: fast-forward main + push tag ───────────────────────
+
+      - name: Add kernel-topics remote
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          set -euo pipefail
+          cd kernel
+          git remote add kernel-topics \
+            "https://x-access-token:${GH_TOKEN}@github.com/qualcomm-linux/kernel-topics.git"
+          git fetch --filter=blob:none kernel-topics \
+            refs/heads/main:refs/remotes/kernel-topics/main
+
+      - name: Check kernel-topics update
+        id: topics_update
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          tag="${{ steps.tag.outputs.tag }}"
+          tag_sha="${{ steps.tag.outputs.tag_sha }}"
+          topics_sha="$(git rev-parse refs/remotes/kernel-topics/main)"
+
+          if [ "$topics_sha" = "$tag_sha" ]; then
+            echo "kernel-topics main already points at $tag. Nothing to do."
+            echo "push_needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$topics_sha" "$tag_sha"; then
+            echo "ERROR: pushing $tag to kernel-topics main would require a non-fast-forward update."
+            echo "Current kernel-topics main: $topics_sha"
+            echo "Tag commit               : $tag_sha"
+            echo "Refusing to force-push kernel-topics main."
+            exit 1
+          fi
+
+          echo "kernel-topics main can be fast-forwarded to $tag."
+          echo "push_needed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push kernel-topics main
+        if: steps.topics_update.outputs.push_needed == 'true' && !inputs.dry_run
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel
+          git push kernel-topics \
+            "${{ steps.tag.outputs.tag_sha }}:refs/heads/main"
+          echo "Fast-forwarded kernel-topics main to ${{ steps.tag.outputs.tag }}."
+
+      - name: Push kernel tag to kernel-topics
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          tag="${{ steps.tag.outputs.tag }}"
+          tag_sha="${{ steps.tag.outputs.tag_sha }}"
+
+          if git ls-remote --exit-code --tags kernel-topics "refs/tags/$tag" >/dev/null 2>&1; then
+            remote_tag_sha="$(git ls-remote --tags kernel-topics "refs/tags/$tag" | awk '{print $1}')"
+            if [ "$remote_tag_sha" = "$tag_sha" ]; then
+              echo "Tag $tag already exists on qualcomm-linux/kernel-topics."
+              exit 0
+            fi
+            echo "ERROR: tag $tag already exists on qualcomm-linux/kernel-topics with a different SHA."
+            echo "Remote tag: $remote_tag_sha"
+            echo "Local tag : $tag_sha"
+            exit 1
+          fi
+
+          git push kernel-topics "refs/tags/$tag:refs/tags/$tag"
+          echo "Pushed tag $tag to qualcomm-linux/kernel-topics."
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Torvalds Tag Sync"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Tag | \`${{ steps.tag.outputs.tag }}\` |"
+            echo "| Tag SHA | \`${{ steps.tag.outputs.tag_sha }}\` |"
+            echo "| kernel push needed | \`${{ steps.update.outputs.push_needed }}\` |"
+            echo "| kernel-topics push needed | \`${{ steps.topics_update.outputs.push_needed }}\` |"
+            echo "| Tag pushed | \`${{ !inputs.dry_run }}\` |"
+            echo "| Dry run | \`${{ inputs.dry_run }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # STABLE KERNEL TAG SYNC
+  #
+  # Fetches the latest vX.Y.Z release tag for each tracked stable series from
+  # git.kernel.org/stable and pushes it to qualcomm-linux/kernel.
+  #
+  # To track a new stable series in the future, simply add its version string
+  # to the matrix list below, e.g.:
+  #   version: ["6.18", "6.6", "6.12"]
+  # ─────────────────────────────────────────────────────────────────────────
+  sync-stable:
+    name: Push stable tag — v${{ matrix.version }}
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    strategy:
+      fail-fast: false
+      matrix:
+        # ── Add or remove stable series versions here ──────────────────────
+        version:
+          - "6.18"
+        # ───────────────────────────────────────────────────────────────────
+    steps:
+      - name: Configure git
+        shell: bash
+        run: |
+          git config --global user.name "QLI CI Bot"
+          git config --global user.email "qualcomm-linux@qualcomm.com"
+
+      - name: Clone qualcomm-linux/kernel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          set -euo pipefail
+          git clone \
+            --filter=blob:none \
+            --no-tags \
+            "https://x-access-token:${GH_TOKEN}@github.com/qualcomm-linux/kernel.git" \
+            kernel
+
+      - name: Fetch stable tags for v${{ matrix.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel
+          git remote add stable \
+            https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+          git fetch --filter=blob:none --tags stable \
+            "+refs/tags/v${{ matrix.version }}.*:refs/tags/v${{ matrix.version }}.*"
+
+      - name: Resolve latest stable tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          # Find the highest vX.Y.Z tag for this series (excludes -rc tags).
+          latest=$(git tag -l "v${{ matrix.version }}.*" \
+            | grep -v '\-rc' \
+            | sort -V \
+            | tail -n 1)
+
+          if [ -z "$latest" ]; then
+            echo "ERROR: no stable release tag found matching v${{ matrix.version }}.*"
+            exit 1
+          fi
+
+          tag_sha=$(git rev-parse "$latest^{commit}")
+          echo "tag=$latest"      >> "$GITHUB_OUTPUT"
+          echo "tag_sha=$tag_sha" >> "$GITHUB_OUTPUT"
+          echo "Latest stable tag for v${{ matrix.version }}: $latest ($tag_sha)"
+
+      - name: Push stable tag to qualcomm-linux/kernel
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          tag="${{ steps.tag.outputs.tag }}"
+          tag_sha="${{ steps.tag.outputs.tag_sha }}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            remote_sha=$(git ls-remote --tags origin "refs/tags/$tag" | awk '{print $1}')
+            if [ "$remote_sha" = "$tag_sha" ]; then
+              echo "Tag $tag already exists on qualcomm-linux/kernel with correct SHA. Nothing to do."
+              exit 0
+            fi
+            echo "ERROR: tag $tag already exists on qualcomm-linux/kernel with a different SHA."
+            echo "Remote: $remote_sha  Expected: $tag_sha"
+            exit 1
+          fi
+
+          git push origin "refs/tags/$tag:refs/tags/$tag"
+          echo "Pushed $tag to qualcomm-linux/kernel."
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Stable Tag Sync — v${{ matrix.version }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Series | \`v${{ matrix.version }}\` |"
+            echo "| Latest tag | \`${{ steps.tag.outputs.tag }}\` |"
+            echo "| Tag SHA | \`${{ steps.tag.outputs.tag_sha }}\` |"
+            echo "| Dry run | \`${{ inputs.dry_run }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
