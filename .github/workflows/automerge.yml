@@ -1,0 +1,167 @@
+name: Automerge Topic Branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_version:
+        description : Kernel Version on which Topic branches needs to be merged
+        type: string
+        required: true
+
+jobs:
+  build:
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+
+      - name: Clone kernel-config
+        uses: actions/checkout@v4
+        with:
+          repository: qualcomm-linux/kernel-config
+          path: kernel-config
+          token: ${{ secrets.SPAT }}
+
+      - name: Clone automerge
+        uses: actions/checkout@v4
+        with:
+          repository: sgaud-quic/automerge
+          ref: logging
+          path: automerge
+          token: ${{ secrets.SPAT }}
+
+      - name: Clone kernel-topics
+        uses: actions/checkout@v4
+        with:
+          repository: qualcomm-linux/kernel-topics
+          path: kernel-topics
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.SPAT }}
+
+      - name: Reset qcom-next-staging
+        env:
+          SPAT: ${{ secrets.SPAT }}
+        run: |
+          echo "Kernel Version : ${{ inputs.kernel_version }}"
+          cd $GITHUB_WORKSPACE/kernel-topics
+
+          # The requested tag must already exist in qualcomm-linux/kernel-topics,
+          # synced from upstream by the sync-upstream-tag.yml workflow.
+          if ! git rev-parse "${{ inputs.kernel_version }}^{commit}" > /dev/null 2>&1; then
+            echo "ERROR: tag '${{ inputs.kernel_version }}' not found in qualcomm-linux/kernel-topics."
+            echo "Run sync-upstream-tag.yml first to sync this tag before running automerge."
+            exit 1
+          fi
+
+          tag_sha=$(git rev-parse "${{ inputs.kernel_version }}^{commit}")
+          echo "Resolved '${{ inputs.kernel_version }}' -> $tag_sha"
+
+          git remote add kernel "https://x-access-token:${SPAT}@github.com/qualcomm-linux/kernel.git"
+          git fetch kernel
+
+          # Push the tag to the staging kernel repo and reset qcom-next-staging
+          git push kernel "${{ inputs.kernel_version }}"
+          git checkout "${{ inputs.kernel_version }}"
+          git push kernel HEAD:qcom-next-staging -f
+
+      - name: Run Automerge
+        run:  |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/kernel-topics
+          test -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf
+          $GITHUB_WORKSPACE/automerge/ci-merge -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n -p | tee $GITHUB_WORKSPACE/merge.log
+
+      - name: Parse and Add logs
+        run: |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/kernel-topics
+          mkdir qcom-next
+          $GITHUB_WORKSPACE/automerge/log-parser.sh $GITHUB_WORKSPACE/merge.log
+          cp topic_SHA1 qcom-next
+          cp ../merge.log qcom-next/
+          sed -i 's/\r$//' qcom-next/merge.log
+          git config user.email "sgaud@qti.qualcomm.com"
+          git config user.name  "Salendarsingh Gaud"
+          git add qcom-next/merge.log qcom-next/topic_SHA1
+          git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s
+
+      - name: Set Kernel Version
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-topics
+          kernel_version=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^EXTRAVERSION =/ {e=$3} END {print v "." p e}' Makefile)
+          echo "kernel_version=$kernel_version" >> $GITHUB_ENV
+
+      - name: Push to Branch
+        run: |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/kernel-topics
+          git remote add sgaud-quic https://github.com/sgaud-quic/kernel.git
+          git fetch sgaud-quic
+          branch="qcom-next-staging-${{ env.kernel_version }}-$(date +%Y%m%d)"
+          git push sgaud-quic HEAD:$branch -f
+
+          echo "branch=$branch" >> $GITHUB_ENV
+          echo "final_sha=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Install gh CLI
+        run: which gh || sudo apt-get install -y gh
+
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ secrets.SPAT }}
+        run: |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/kernel-topics
+          PR_NUMBER=$(gh pr list --repo qualcomm-linux/kernel --head sgaud-quic:${{ env.branch }} --state open --json number --jq '.[0].number // ""')
+          if [ -n "$PR_NUMBER" ]; then
+            PR_URL=$(gh pr view "$PR_NUMBER" --repo qualcomm-linux/kernel --json url --jq '.url')
+            echo "Open PR exists for branch '${{ env.branch }}': PR #$PR_NUMBER"
+            echo "pr_status=existing" >> $GITHUB_ENV
+          else
+            echo "No open PR found for branch 'qcom-next-staging'"
+            PR_URL=$(gh pr create --repo qualcomm-linux/kernel --head sgaud-quic:${{ env.branch }} --base qcom-next-staging --title "Prepare qcom-next based on tag 'Linux ${{ env.kernel_version }}' of https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git" --body-file qcom-next/topic_SHA1)
+            PR_NUMBER=${PR_URL##*/}
+            echo "pr_status=created" >> $GITHUB_ENV
+          fi
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_ENV
+          echo "pr_url=$PR_URL" >> $GITHUB_ENV
+
+      - name: Update summary
+        if: ${{ always() }}
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/merge.log" ]; then
+            merge_success=$(grep -c '^Merge successful' "$GITHUB_WORKSPACE/merge.log" || true)
+            merge_failed=$(grep -c '^Merge failed' "$GITHUB_WORKSPACE/merge.log" || true)
+            nothing_to_merge=$(grep -c '^Nothing to merge' "$GITHUB_WORKSPACE/merge.log" || true)
+          else
+            merge_success="N/A"
+            merge_failed="N/A"
+            nothing_to_merge="N/A"
+          fi
+
+          {
+            echo "## Automerge Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Input base kernel version | \`${{ inputs.kernel_version }}\` |"
+            echo "| Resolved kernel version | \`${kernel_version:-N/A}\` |"
+            echo "| Target branch | \`qcom-next-staging\` |"
+            echo "| Pushed branch | \`${branch:-N/A}\` |"
+            echo "| Final commit | \`${final_sha:-N/A}\` |"
+            echo "| Merged topics | \`${merge_success}\` |"
+            echo "| Already up-to-date topics | \`${nothing_to_merge}\` |"
+            echo "| Failed merges | \`${merge_failed}\` |"
+            echo "| PR status | \`${pr_status:-N/A}\` |"
+            if [ -n "${pr_url:-}" ]; then
+              echo "| PR | [#${pr_number}](${pr_url}) |"
+            else
+              echo "| PR | \`N/A\` |"
+            fi
+            echo "| Config file | \`kernel-config/qcom-next.conf\` |"
+            echo "| Merge log | \`merge.log\` |"
+            echo "| Workflow run | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
