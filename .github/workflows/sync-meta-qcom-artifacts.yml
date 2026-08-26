@@ -1,0 +1,216 @@
+name: sync-meta-qcom-artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      nightly_buid_id:
+        description: Nightly Build ID from meta-qcom
+        type: string
+        required: true
+
+env:
+  SOURCE_ARTIFACT_URL: https://qli-prod-artifacts.qualcomm.com/qcom-prd-gh-artifacts/qualcomm-linux/meta-qcom
+  S3_DEST: s3://qli-prd-kernel-gh-artifacts/qualcomm-linux/kernel/meta-qcom/artifacts/
+
+jobs:
+  # ── Read ci/MACHINES.json once and derive the initramfs and rootfs lists ──
+  load-matrix:
+    name: Load artifact lists from MACHINES.json
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    outputs:
+      initramfs_matrix: ${{ steps.extract.outputs.initramfs_matrix }}
+      rootfs_matrix:    ${{ steps.extract.outputs.rootfs_matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract firmware and rootfs lists from MACHINES.json
+        id: extract
+        run: |
+          set -euo pipefail
+
+          # Collect unique non-empty firmwareids and convert to full initramfs names.
+          # Also prepend the special kerneltest-full entry which is not board-specific.
+          initramfs_matrix=$(
+            jq -r '[.[].firmwareid | select(. != "")] | unique | sort | .[]' \
+              ci/MACHINES.json \
+            | awk '{print "initramfs-firmware-" $1 "-image-qcom-armv8a"}' \
+            | jq -R . \
+            | jq -s '["initramfs-kerneltest-full-image-qcom-armv8a"] + .' \
+            | jq -c .
+          )
+
+          # Collect unique non-empty rootfs values.
+          rootfs_matrix=$(
+            jq -c '[.[].rootfs | select(. != "")] | unique | sort' \
+              ci/MACHINES.json
+          )
+
+          echo "initramfs_matrix=${initramfs_matrix}" >> "$GITHUB_OUTPUT"
+          echo "rootfs_matrix=${rootfs_matrix}"       >> "$GITHUB_OUTPUT"
+
+          echo "Initramfs targets: ${initramfs_matrix}"
+          echo "Rootfs targets   : ${rootfs_matrix}"
+
+  # ── Download, validate, and upload initramfs archives in parallel ────────
+  initramfs:
+    name: Upload initramfs — ${{ matrix.target }}
+    needs: load-matrix
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.load-matrix.outputs.initramfs_matrix) }}
+    steps:
+      - name: Download, validate and upload initramfs
+        run: |
+          set -euo pipefail
+
+          work_dir="${RUNNER_TEMP}/upload-artifacts/${{ inputs.nightly_buid_id }}/initramfs"
+          mkdir -p "${work_dir}"
+
+          base_url="${SOURCE_ARTIFACT_URL}/${{ inputs.nightly_buid_id }}/nodistro/qcom-armv8a"
+          artifact="${{ matrix.target }}.cpio.gz"
+          source_url="${base_url}/${artifact}"
+          output="${work_dir}/${artifact}"
+
+          rm -f "${output}"
+          if curl -fL -H "Authorization: ${{ secrets.S3_TOKEN_MQ }}" -o "${output}" "${source_url}"; then
+            test -s "${output}"
+            gzip -t "${output}"
+            aws s3 cp "${output}" "${S3_DEST}"
+            echo "Uploaded ${artifact} from ${source_url}"
+          elif aws s3 ls "${S3_DEST}${artifact}" >/dev/null; then
+            echo "Source artifact unavailable for ${artifact}; keeping existing ${S3_DEST}${artifact}"
+          else
+            echo "No source artifact and no existing destination artifact for ${artifact}" >&2
+            exit 1
+          fi
+
+  # ── Download, validate, and upload rootfs flash archives in parallel ─────
+  rootfs:
+    name: Upload rootfs — ${{ matrix.target }}
+    needs: load-matrix
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.load-matrix.outputs.rootfs_matrix) }}
+    steps:
+      - name: Download, validate and upload rootfs
+        run: |
+          set -euo pipefail
+
+          work_dir="${RUNNER_TEMP}/upload-artifacts/${{ inputs.nightly_buid_id }}/rootfs"
+          mkdir -p "${work_dir}"
+
+          base_url="${SOURCE_ARTIFACT_URL}/${{ inputs.nightly_buid_id }}/qcom-distro/${{ matrix.target }}"
+          artifact="qcom-multimedia-image-${{ matrix.target }}.rootfs.qcomflash.tar.gz"
+          source_url="${base_url}/${artifact}"
+          output="${work_dir}/${artifact}"
+
+          rm -f "${output}"
+          if curl -fL -H "Authorization: ${{ secrets.S3_TOKEN_MQ }}" -o "${output}" "${source_url}"; then
+            test -s "${output}"
+            gzip -t "${output}"
+            tar -tzf "${output}" >/dev/null
+            aws s3 cp "${output}" "${S3_DEST}"
+            echo "Uploaded ${artifact} from ${source_url}"
+          elif aws s3 ls "${S3_DEST}${artifact}" >/dev/null; then
+            echo "Source artifact unavailable for ${artifact}; keeping existing ${S3_DEST}${artifact}"
+          else
+            echo "No source artifact and no existing destination artifact for ${artifact}" >&2
+            exit 1
+          fi
+
+  # ── Upload source manifest for every expected binary ────────────────────
+  build-info:
+    name: Upload build source manifest
+    needs:
+      - load-matrix
+      - initramfs
+      - rootfs
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Create and upload build.txt
+        run: |
+          set -euo pipefail
+
+          work_dir="${RUNNER_TEMP}/upload-artifacts/${{ inputs.nightly_buid_id }}/build-info"
+          previous_build="${work_dir}/previous-build.txt"
+          build_info="${work_dir}/build.txt"
+          mkdir -p "${work_dir}"
+
+          aws s3 cp "${S3_DEST}build.txt" "${previous_build}" || touch "${previous_build}"
+
+          {
+            echo "nightly_build_id=${{ inputs.nightly_buid_id }}"
+            echo "source_artifact_url=${SOURCE_ARTIFACT_URL}"
+            echo "destination=${S3_DEST}"
+            echo "format=artifact<TAB>status<TAB>source_url"
+            echo ""
+          } > "${build_info}"
+
+          previous_source_url() {
+            awk -F '\t' -v artifact="$1" '$1 == artifact { source = $3 } END { if (source != "") print source }' "${previous_build}"
+          }
+
+          record_artifact() {
+            local artifact="$1"
+            local source_url="$2"
+            local previous_source
+
+            if curl -fsIL -H "Authorization: ${{ secrets.S3_TOKEN_MQ }}" -o /dev/null "${source_url}"; then
+              printf '%s\t%s\t%s\n' "${artifact}" "updated" "${source_url}" >> "${build_info}"
+            else
+              previous_source="$(previous_source_url "${artifact}")"
+              if [ -z "${previous_source}" ]; then
+                echo "No source artifact and no previous build.txt entry for ${artifact}" >&2
+                return 1
+              fi
+              printf '%s\t%s\t%s\n' "${artifact}" "kept" "${previous_source}" >> "${build_info}"
+            fi
+          }
+
+          initramfs_base_url="${SOURCE_ARTIFACT_URL}/${{ inputs.nightly_buid_id }}/nodistro/qcom-armv8a"
+          rootfs_base_url="${SOURCE_ARTIFACT_URL}/${{ inputs.nightly_buid_id }}/qcom-distro"
+
+          mapfile -t initramfs_targets < <(
+            echo '${{ needs.load-matrix.outputs.initramfs_matrix }}' | jq -r '.[]'
+          )
+          mapfile -t rootfs_targets < <(
+            echo '${{ needs.load-matrix.outputs.rootfs_matrix }}' | jq -r '.[]'
+          )
+
+          for target in "${initramfs_targets[@]}"; do
+            artifact="${target}.cpio.gz"
+            record_artifact "${artifact}" "${initramfs_base_url}/${artifact}"
+          done
+
+          for target in "${rootfs_targets[@]}"; do
+            artifact="qcom-multimedia-image-${target}.rootfs.qcomflash.tar.gz"
+            record_artifact "${artifact}" "${rootfs_base_url}/${target}/${artifact}"
+          done
+
+          cat "${build_info}"
+          aws s3 cp "${build_info}" "${S3_DEST}build.txt"
+          echo "Uploaded build manifest to ${S3_DEST}build.txt"
