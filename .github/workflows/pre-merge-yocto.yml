@@ -51,6 +51,8 @@ jobs:
     needs: init-status
     uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
     secrets: inherit
+    with:
+      branch: ${{ inputs.ref }}
 
   build_yocto:
     name: Build Yocto
