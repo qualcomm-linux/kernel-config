@@ -37,8 +37,13 @@ jobs:
     name: Initialize Status
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Set Status
-        uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
+        uses: ./.github/actions/workflow_status
         with:
           sha: ${{ github.event.inputs.sha || github.sha }}
           action_mode: start
@@ -46,18 +51,60 @@ jobs:
           repo: ${{ github.event.inputs.repo || github.repository }}
           GH_TOKEN: ${{ secrets.PAT }}
 
+  yocto-config:
+    name: Load Yocto Workflow Config
+    runs-on: ubuntu-latest
+    needs: init-status
+    outputs:
+      build_enabled: ${{ steps.check.outputs.build_enabled }}
+      test_enabled: ${{ steps.check.outputs.test_enabled }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ci/WORKFLOWS.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check branch enablement
+        id: check
+        uses: actions/github-script@v7
+        env:
+          INPUT_BRANCH: ${{ inputs.ref }}
+        with:
+          script: |
+            const fs = require('fs');
+            const branch = process.env.INPUT_BRANCH || '';
+            let cfg = {};
+            try {
+              cfg = JSON.parse(fs.readFileSync('ci/WORKFLOWS.json', 'utf-8'));
+            } catch (e) {
+              core.warning(`Could not read ci/WORKFLOWS.json: ${e.message}. Defaulting to enabled.`);
+              core.setOutput('build_enabled', 'true');
+              core.setOutput('test_enabled', 'true');
+              return;
+            }
+            const wf = cfg['pre_merge_yocto'] || {};
+            const buildBranches = wf['build_branches'] || [];
+            const testBranches  = wf['test_branches']  || [];
+            const buildEnabled = buildBranches.length === 0 || buildBranches.includes(branch);
+            const testEnabled  = testBranches.length  === 0 || testBranches.includes(branch);
+            console.log(`branch=${branch} build_enabled=${buildEnabled} test_enabled=${testEnabled}`);
+            core.setOutput('build_enabled', String(buildEnabled));
+            core.setOutput('test_enabled',  String(testEnabled));
+
   loading:
     name: Load Parameters
-    needs: init-status
-    uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
+    needs: [init-status, yocto-config]
+    if: needs.yocto-config.outputs.build_enabled == 'true'
+    uses: ./.github/workflows/loading.yml
     secrets: inherit
     with:
       branch: ${{ inputs.ref }}
 
   build_yocto:
     name: Build Yocto
-    needs: [init-status, loading]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
+    needs: [init-status, yocto-config, loading]
+    if: needs.yocto-config.outputs.build_enabled == 'true'
+    uses: ./.github/workflows/build-yocto.yml
     secrets: inherit
     with:
       repo: ${{ inputs.repo || 'qualcomm-linux/kernel' }}
@@ -66,13 +113,20 @@ jobs:
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
       base: ${{ inputs.base }}
       pr_list: ${{ inputs.pr_list }}
+      upload_artifacts: ${{ needs.yocto-config.outputs.test_enabled }}
 
   check_run:
     runs-on: ubuntu-latest
-    needs: [init-status, loading, build_yocto]
+    needs: [init-status, yocto-config, loading, build_yocto]
+    if: needs.yocto-config.outputs.test_enabled == 'true'
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Post check run
-        uses: qualcomm-linux/kernel-config/.github/actions/check_run@main
+        uses: ./.github/actions/check_run
         with:
           sha: ${{ inputs.sha }}
           repo: ${{ inputs.repo }}
@@ -82,12 +136,13 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    needs: [init-status, loading, build_yocto]
+    needs: [init-status, yocto-config, loading, build_yocto]
+    if: needs.yocto-config.outputs.test_enabled == 'true'
     strategy:
       fail-fast: false
       matrix:
         image_type: [multimedia, proprietary]
-    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
+    uses: ./.github/workflows/test.yml
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
@@ -102,8 +157,8 @@ jobs:
 
   premerge_report:
     name: Pre-merge LAVA Test Report
-    if: always()
-    needs: [build_yocto, test]
+    if: always() && needs.yocto-config.outputs.test_enabled == 'true'
+    needs: [yocto-config, build_yocto, test]
     runs-on: ubuntu-latest
     steps:
       - name: Download all test JSON artifacts
@@ -234,13 +289,18 @@ jobs:
     name: Finalize Status
     if: always()
     runs-on: ubuntu-latest
-    needs: [build_yocto, check_run, test]
+    needs: [yocto-config, build_yocto, check_run, test]
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Set final status
-        uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
+        uses: ./.github/actions/workflow_status
         with:
           sha: ${{ github.event.inputs.sha || github.sha }}
-          action_mode: ${{ needs.build_yocto.result == 'success' && needs.test.result || needs.build_yocto.result }}
+          action_mode: ${{ needs.build_yocto.result == 'skipped' && 'success' || (needs.test.result != 'skipped' && needs.test.result || needs.build_yocto.result) }}
           check_name: "Yocto Build Generation"
           repo: ${{ github.event.inputs.repo || github.repository }}
           GH_TOKEN: ${{ secrets.PAT }}

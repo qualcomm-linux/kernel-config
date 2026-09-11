@@ -1,0 +1,13 @@
+{
+  "pre_merge_yocto": {
+    "build_branches": [
+      "qcom-next-staging",
+      "qcom-6.18.y",
+      "qcom-7.2"
+    ],
+    "test_branches": [
+      "qcom-next-staging",
+      "qcom-7.2"
+    ]
+  }
+}

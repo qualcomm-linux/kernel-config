@@ -37,6 +37,10 @@ inputs:
     type: string
     required: false
     default: ""
+  upload_artifacts:
+    description: Upload Yocto build artifacts for downstream testing
+    required: false
+    default: "true"
 
 outputs:
   artifacts_location:
@@ -244,7 +248,7 @@ runs:
         echo "kernel_version=$version" >> $GITHUB_OUTPUT
 
     - name: Prepare file list for log upload
-      if: always()
+      if: inputs.upload_artifacts == 'true'
       shell: bash
       run: |
         set -ex
@@ -271,9 +275,9 @@ runs:
         fi
 
     - name: Upload artifacts to S3
-      if: always()
+      if: inputs.upload_artifacts == 'true'
       id: upload_artifacts
-      uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+      uses: ./.github/actions/aws_s3_helper
       with:
         s3_bucket: qli-prd-kernel-gh-artifacts
         local_file: ${{ github.workspace }}/file_list.txt

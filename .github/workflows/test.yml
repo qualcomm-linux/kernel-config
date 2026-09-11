@@ -67,9 +67,10 @@ jobs:
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Pull docker image
-        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+        uses: ./.github/actions/pull_docker_image
         with:
           image: ${{ inputs.docker_image }}
           registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
@@ -105,7 +106,7 @@ jobs:
           echo "Flash_type : $flash_type"
 
       - name: Create lava job definition
-        uses: qualcomm-linux/kernel-config/.github/actions/lava_job_render@main
+        uses: ./.github/actions/lava_job_render
         id: create_job_definition
         with:
           docker_image: ${{ inputs.docker_image }}

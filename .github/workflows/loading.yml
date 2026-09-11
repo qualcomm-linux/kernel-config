@@ -44,10 +44,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          repository: qualcomm-linux/kernel-config
+          ref: ${{ github.ref }}
+          persist-credentials: false
 
       - name: Load Parameters
         id: loading
-        uses: qualcomm-linux/kernel-config/.github/actions/loading@main
+        uses: ./.github/actions/loading
         with:
           branch: ${{ inputs.branch }}
