@@ -95,10 +95,12 @@ jobs:
           echo "kernel_version=$kernel_version" >> $GITHUB_ENV
 
       - name: Push to Branch
+        env:
+          SPAT: ${{ secrets.SPAT }}
         run: |
           set -euo pipefail
           cd $GITHUB_WORKSPACE/kernel-topics
-          git remote add sgaud-quic https://github.com/sgaud-quic/kernel.git
+          git remote add sgaud-quic "https://x-access-token:${SPAT}@github.com/sgaud-quic/kernel.git"
           git fetch sgaud-quic
           branch="qcom-next-staging-${{ env.kernel_version }}-$(date +%Y%m%d)"
           git push sgaud-quic HEAD:$branch -f
