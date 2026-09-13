@@ -360,21 +360,27 @@ jobs:
           BODY_FILE=$(mktemp)
           printf '%s' "$PR_BODY" > "$BODY_FILE"
 
+          # Look for an open PR only. Closed/merged PRs are ignored.
+          # gh pr list --head is unreliable for cross-fork PRs (the GitHub
+          # REST API head= filter only matches branches in the base repo, so
+          # fork-head PRs are silently omitted). Fetch all open PRs and filter
+          # in jq on the full headRepositoryOwner + headRefName metadata instead.
           EXISTING_PR=$(gh pr list \
             --repo qualcomm-linux/meta-qcom \
-            --head "sgaud-quic:${BRANCH}" \
             --state open \
-            --json number \
-            --jq '.[0].number // empty')
+            --limit 200 \
+            --json number,headRepositoryOwner,headRefName \
+            | jq -r --arg owner "sgaud-quic" --arg branch "$BRANCH" \
+              '[.[] | select(.headRepositoryOwner.login == $owner and .headRefName == $branch)] | .[0].number // empty')
 
           if [[ -n "$EXISTING_PR" ]]; then
-            echo "Updating existing PR #${EXISTING_PR} title and body."
+            echo "Updating open PR #${EXISTING_PR} title and body."
             gh pr edit "$EXISTING_PR" \
               --repo qualcomm-linux/meta-qcom \
               --title "$PR_TITLE" \
               --body-file "$BODY_FILE"
           else
-            echo "Creating new PR."
+            echo "No open PR found for branch ${BRANCH}. Creating new PR."
             gh pr create \
               --repo  qualcomm-linux/meta-qcom \
               --head  "sgaud-quic:${BRANCH}" \
