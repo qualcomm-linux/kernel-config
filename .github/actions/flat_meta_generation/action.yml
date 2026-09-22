@@ -10,9 +10,25 @@ inputs:
   docker_image:
     description: Docker image name
     required: true
-  rootfs_matrix:
-    description: Rootfs matrix
+  machine:
+    description: Target machine
     required: true
+  rootfs:
+    description: Rootfs target
+    required: false
+    default: ""
+  firmwareid:
+    description: Firmware ID
+    required: false
+    default: ""
+  hypervisor:
+    description: Hypervisor type
+    required: false
+    default: ""
+  storage:
+    description: Storage type
+    required: false
+    default: ufs
 
 runs:
   using: "composite"
@@ -25,153 +41,148 @@ runs:
         workspace="${{ inputs.workspace_path }}"
         s3_bucket="${{ inputs.s3_bucket }}"
         docker_image="${{ inputs.docker_image }}"
-        rootfs_matrix='${{ inputs.rootfs_matrix }}'
 
-        for row in $(echo "$rootfs_matrix" | jq -c '.[]'); do
-          machine=$(echo "$row" | jq -r '.machine')
-          rootfs=$(echo "$row" | jq -r '.rootfs')
-          firmwareid=$(echo "$row" | jq -r '.firmwareid')
-          hypervisor=$(echo "$row" | jq -r '.hypervisor // ""')
-          storage=$(echo "$row" | jq -r '.storage // "ufs"')
+        machine="${{ inputs.machine }}"
+        rootfs="${{ inputs.rootfs }}"
+        firmwareid="${{ inputs.firmwareid }}"
+        hypervisor="${{ inputs.hypervisor }}"
+        storage="${{ inputs.storage }}"
+        storage="${storage:-ufs}"
 
-          echo "Target : $machine"
-          echo "Rootfs ID : $rootfs"
-          echo "Firmware ID : $firmwareid"
-          echo "Hypervisor : $hypervisor"
-          echo "Storage : $storage"
-          echo "-----------------------------"
+        echo "Target : $machine"
+        echo "Rootfs ID : $rootfs"
+        echo "Firmware ID : $firmwareid"
+        echo "Hypervisor : $hypervisor"
+        echo "Storage : $storage"
+        echo "-----------------------------"
 
-          if [ -z "$rootfs" ]; then
-            echo "No Rootfs present for $machine, skip generating Flat Build."
-            continue
-          fi
+        if [ -z "$rootfs" ]; then
+          echo "No Rootfs present for $machine, skip generating Flat Build."
+          exit 0
+        fi
 
-          build_dir="$workspace/../flatbuild-$rootfs"
-          meta_dir="$build_dir/qcom-multimedia-image-${rootfs}.rootfs.qcomflash"
+        build_dir="$workspace/../flatbuild-$rootfs"
+        meta_dir="$build_dir/qcom-multimedia-image-${rootfs}.rootfs.qcomflash"
+        artifacts_dir="$build_dir/artifacts"
 
-          artifacts_dir="$build_dir/artifacts"
+        mkdir -p "$build_dir"
+        cd "$build_dir"
+        aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz" .
 
-          mkdir -p "$build_dir"
-          cd "$build_dir"
-          aws s3 cp s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz .
-          
-          mkdir -p $meta_dir
-          tar -xzf qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz --strip-components=1 -C $meta_dir
+        mkdir -p "$meta_dir"
+        tar -xzf "qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz" --strip-components=1 -C "$meta_dir"
 
-          cd "$meta_dir"
-          #sed -i '/rootfs.img/d' rawprogram0.xml
+        cd "$meta_dir"
 
-          if [ -f rootfs.img ]; then
-            modules_dir="$workspace/../kobj/tar-install/lib/modules"
-            rootfs_mount="$build_dir/rootfs-mount"
-            rootfs_mounted=0
+        if [ -f rootfs.img ]; then
+          modules_dir="$workspace/../kobj/tar-install/lib/modules"
+          rootfs_mount="$build_dir/rootfs-mount"
+          rootfs_mounted=0
 
-            cleanup_rootfs_mount() {
-              if [ "$rootfs_mounted" -eq 1 ]; then
-                sync || true
-                sudo umount "$rootfs_mount" || true
-              fi
-              rmdir "$rootfs_mount" 2>/dev/null || true
-            }
-
-            trap cleanup_rootfs_mount EXIT
-
-            mkdir -p "$rootfs_mount"
-            sudo mount -o loop rootfs.img "$rootfs_mount"
-            rootfs_mounted=1
-            sudo mkdir -p "$rootfs_mount/lib/modules"
-            sudo cp -a "$modules_dir/." "$rootfs_mount/lib/modules/"
-            sync
-            sudo umount "$rootfs_mount"
-            rootfs_mounted=0
-            rmdir "$rootfs_mount"
-            trap - EXIT
-          else
-            echo "rootfs.img not present for $machine, skip packing modules into rootfs.img."
-          fi
-
-          mkdir -p "$artifacts_dir"
-          cd "$artifacts_dir"
-
-          #aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz" .
-          wget "https://storage.kernelci.org/images/rootfs/debian/trixie/20260219.0/arm64/initrd.cpio.gz"
-
-          if [ -n "$firmwareid" ]; then
-            gunzip -c initrd.cpio.gz > initrd.cpio
-            aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
-            gunzip -c initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz > firmware.cpio
-            cat initrd.cpio firmware.cpio > initramfs-$machine.cpio
-            gzip initramfs-$machine.cpio
-          else
-            echo "Firmware not available for Target : $machine"
-            mv initrd.cpio.gz initramfs-$machine.cpio.gz
-          fi
-
-          (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/initramfs-$machine.cpio.gz")
-
-          wget -O systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb
-          dpkg-deb -xv systemd-boot-efi.deb systemd
-
-          cd "$build_dir"
-          #Pack devictree in efi for glymur.
-          if [ "$rootfs" = "glymur-crd" ]; then
-            devicetree_arg="--devicetree ../kobj/arch/arm64/boot/dts/qcom/glymur-crd.dtb"
-          else
-            devicetree_arg=""
-          fi
-
-          cmdline="console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto copy-modules rootdelay=10 root=PARTLABEL=rootfs"
-          if [ "$machine" = "monaco-evk" ] || [ "$machine" = "qcs8300-ride" ]; then
-            cmdline="$cmdline arm64.nopauth"
-          fi
-
-          dtb_path="../kobj/arch/arm64/boot/dts/qcom/$machine.dtb"
-          if [ "$hypervisor" = "kvm" ]; then
-            dtb_path="../kobj/arch/arm64/boot/dts/qcom/$machine-el2.dtb"
-          fi
-
-          docker run -i --rm \
-            --user "$(id -u):$(id -g)" \
-            --workdir="$PWD" \
-            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            -e machine="$machine" \
-            -e devicetree_arg="$devicetree_arg" \
-            -e cmdline="$cmdline" \
-            "$docker_image" bash -c '
-              generate_boot_bins.sh efi \
-                --ramdisk artifacts/initramfs-$machine.cpio.gz \
-                --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
-                --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
-                --linux ../kobj/arch/arm64/boot/Image \
-                --cmdline "$cmdline" \
-                $devicetree_arg \
-                --output images
-            '
-
-          docker run -i --rm \
-            --user "$(id -u):$(id -g)" \
-            --workdir="$PWD" \
-            -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
-            -e dtb_path="$dtb_path" \
-            "$docker_image" bash -c '
-              generate_boot_bins.sh dtb \
-                --input "$dtb_path" \
-                --output images
-            '
-
-          if [ "$rootfs" = "glymur-crd" ]; then
-            cp "$build_dir/images/efi_with_dtb.bin" "$build_dir/images/efi.bin"
-          fi
-
-          cp "$build_dir/images/efi.bin" "$meta_dir"
-          cp "$build_dir/images/dtb.bin" "$meta_dir"
-          cp "$workspace/../kobj/vmlinux" "$meta_dir"
-          if [ "$storage" = "spinor" ]; then
-            if [ -d "$meta_dir/spinor" ]; then
-              cp "$build_dir/images/dtb.bin" "$meta_dir/spinor/dtb.bin"
-            else
-              echo "spinor directory not present for $machine, skip copying dtb.bin."
+          cleanup_rootfs_mount() {
+            if [ "$rootfs_mounted" -eq 1 ]; then
+              sync || true
+              sudo umount "$rootfs_mount" || true
             fi
+            rmdir "$rootfs_mount" 2>/dev/null || true
+          }
+
+          trap cleanup_rootfs_mount EXIT
+
+          mkdir -p "$rootfs_mount"
+          sudo mount -o loop rootfs.img "$rootfs_mount"
+          rootfs_mounted=1
+          sudo mkdir -p "$rootfs_mount/lib/modules"
+          sudo cp -a "$modules_dir/." "$rootfs_mount/lib/modules/"
+          sync
+          sudo umount "$rootfs_mount"
+          rootfs_mounted=0
+          rmdir "$rootfs_mount"
+          trap - EXIT
+        else
+          echo "rootfs.img not present for $machine, skip packing modules into rootfs.img."
+        fi
+
+        mkdir -p "$artifacts_dir"
+        cd "$artifacts_dir"
+
+        wget "https://storage.kernelci.org/images/rootfs/debian/trixie/20260219.0/arm64/initrd.cpio.gz"
+
+        if [ -n "$firmwareid" ]; then
+          gunzip -c initrd.cpio.gz > initrd.cpio
+          aws s3 cp "s3://$s3_bucket/qualcomm-linux/kernel/meta-qcom/artifacts/initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" .
+          gunzip -c "initramfs-firmware-$firmwareid-image-qcom-armv8a.cpio.gz" > firmware.cpio
+          cat initrd.cpio firmware.cpio > "initramfs-$machine.cpio"
+          gzip "initramfs-$machine.cpio"
+        else
+          echo "Firmware not available for Target : $machine"
+          mv initrd.cpio.gz "initramfs-$machine.cpio.gz"
+        fi
+
+        (cd "$workspace/../kobj/tar-install" && find lib/modules | cpio -o -H newc -R +0:+0 | gzip -9 >> "$artifacts_dir/initramfs-$machine.cpio.gz")
+
+        wget -O systemd-boot-efi.deb http://ports.ubuntu.com/pool/universe/s/systemd/systemd-boot-efi_255.4-1ubuntu8_arm64.deb
+        dpkg-deb -xv systemd-boot-efi.deb systemd
+
+        cd "$build_dir"
+        if [ "$rootfs" = "glymur-crd" ]; then
+          devicetree_arg="--devicetree ../kobj/arch/arm64/boot/dts/qcom/glymur-crd.dtb"
+        else
+          devicetree_arg=""
+        fi
+
+        cmdline="console=ttyMSM0,115200n8 earlycon qcom_geni_serial.con_enabled=1 qcom_scm.download_mode=1 reboot=panic_warm panic=-1 mitigations=auto copy-modules rootdelay=10 root=PARTLABEL=rootfs"
+        if [ "$machine" = "monaco-evk" ] || [ "$machine" = "qcs8300-ride" ]; then
+          cmdline="$cmdline arm64.nopauth"
+        fi
+
+        dtb_path="../kobj/arch/arm64/boot/dts/qcom/$machine.dtb"
+        if [ "$hypervisor" = "kvm" ]; then
+          dtb_path="../kobj/arch/arm64/boot/dts/qcom/$machine-el2.dtb"
+        fi
+
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          -e machine="$machine" \
+          -e devicetree_arg="$devicetree_arg" \
+          -e cmdline="$cmdline" \
+          "$docker_image" bash -c '
+            generate_boot_bins.sh efi \
+              --ramdisk artifacts/initramfs-$machine.cpio.gz \
+              --systemd-boot artifacts/systemd/usr/lib/systemd/boot/efi/systemd-bootaa64.efi \
+              --stub artifacts/systemd/usr/lib/systemd/boot/efi/linuxaa64.efi.stub \
+              --linux ../kobj/arch/arm64/boot/Image \
+              --cmdline "$cmdline" \
+              $devicetree_arg \
+              --output images
+          '
+
+        docker run -i --rm \
+          --user "$(id -u):$(id -g)" \
+          --workdir="$PWD" \
+          -v "$(dirname "$PWD")":"$(dirname "$PWD")" \
+          -e dtb_path="$dtb_path" \
+          "$docker_image" bash -c '
+            generate_boot_bins.sh dtb \
+              --input "$dtb_path" \
+              --output images
+          '
+
+        if [ "$rootfs" = "glymur-crd" ]; then
+          cp "$build_dir/images/efi_with_dtb.bin" "$build_dir/images/efi.bin"
+        fi
+
+        cp "$build_dir/images/efi.bin" "$meta_dir"
+        cp "$build_dir/images/dtb.bin" "$meta_dir"
+        cp "$workspace/../kobj/vmlinux" "$meta_dir"
+        if [ "$storage" = "spinor" ]; then
+          if [ -d "$meta_dir/spinor" ]; then
+            cp "$build_dir/images/dtb.bin" "$meta_dir/spinor/dtb.bin"
+          else
+            echo "spinor directory not present for $machine, skip copying dtb.bin."
           fi
-          tar -czvf "$workspace/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz" "qcom-multimedia-image-${rootfs}.rootfs.qcomflash/"
-        done
+        fi
+
+        tar -czvf "$workspace/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz" "qcom-multimedia-image-${rootfs}.rootfs.qcomflash/"

@@ -30,7 +30,7 @@ on:
     outputs:
       s3_location:
         description: "S3 location of uploaded artifacts"
-        value: ${{ jobs.build.outputs.s3_location }}
+        value: ${{ jobs.upload.outputs.s3_location }}
       kernel_version:
         description: "Kernel version built"
         value: ${{ jobs.build.outputs.kernel_version }}
@@ -40,8 +40,11 @@ jobs:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
     outputs:
-      s3_location: ${{ steps.upload-artifacts.outputs.s3_location }}
       kernel_version: ${{ steps.build_workspace.outputs.kernel_version }}
     steps:
       - name: Checkout code
@@ -72,70 +75,189 @@ jobs:
           workspace_path: ${{ steps.sync.outputs.workspace_path }}
           variant: ${{ inputs.variant }}
 
+      - name: Package build outputs for flat-meta jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="${{ steps.sync.outputs.workspace_path }}"
+          base_dir="${{ runner.temp }}/base-artifacts"
+          kobj_stage="${{ runner.temp }}/kobj-stage"
+          mkdir -p "$base_dir/dtbs" "$kobj_stage/kobj/arch/arm64/boot/dts/qcom"
+
+          cp -a "$workspace/../kobj/tar-install" "$kobj_stage/kobj/"
+          mkdir -p "$kobj_stage/kobj/arch/arm64/boot"
+          cp "$workspace/../kobj/arch/arm64/boot/Image" "$kobj_stage/kobj/arch/arm64/boot/Image"
+
+          machines="$(echo '${{ inputs.rootfs_matrix }}' | jq -r '.[].machine' | sort -u)"
+          for machine in $machines; do
+            cp "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}.dtb" "$kobj_stage/kobj/arch/arm64/boot/dts/qcom/${machine}.dtb"
+            cp "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}.dtb" "$base_dir/dtbs/${machine}.dtb"
+          done
+
+          echo '${{ inputs.rootfs_matrix }}' | jq -c '.[] | select(.hypervisor == "kvm")' | while IFS= read -r row; do
+            machine="$(echo "$row" | jq -r '.machine')"
+            cp "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}-el2.dtb" "$kobj_stage/kobj/arch/arm64/boot/dts/qcom/${machine}-el2.dtb"
+          done
+
+          tar -cf "${{ runner.temp }}/kobj-min.tar" -C "$kobj_stage" kobj
+          cp "$workspace/../kobj/arch/arm64/boot/Image" "$base_dir/Image"
+          cp "$workspace/../kobj/vmlinux" "$base_dir/vmlinux"
+
+      - name: Upload build base artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-base
+          path: |
+            ${{ runner.temp }}/base-artifacts
+            ${{ runner.temp }}/kobj-min.tar
+          compression-level: 0
+          retention-days: 3
+
+      - name: Update summary
+        if: success() || failure()
+        shell: bash
+        run: |
+          if [ "${{ steps.build_workspace.outcome }}" == "success" ]; then
+            echo "Build was successful"
+            summary=":heavy_check_mark: Build Success"
+          else
+            echo "Build failed"
+            summary=":x: Build Failed"
+          fi
+          SUMMARY='
+          <details><summary><i>Build Summary</i></summary>
+          '${summary}'
+          </details>
+          '
+          echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+  flat_build:
+    needs: build
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(inputs.rootfs_matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Pull docker image
+        uses: qualcomm-linux/kernel-config/.github/actions/pull_docker_image@main
+        with:
+          image: ${{ inputs.docker_image }}
+          registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+      - name: Download build base artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-base
+          path: ${{ runner.temp }}/build-base
+
+      - name: Prepare workspace from build outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ github.workspace }}/kernel"
+          tar -xf "${{ runner.temp }}/build-base/kobj-min.tar" -C "${{ github.workspace }}"
+
       - name: Generate flat build
+        if: ${{ matrix.target.rootfs != '' }}
         id: generate_flat_build
-        uses: qualcomm-linux/kernel-config/.github/actions/flat_meta_generation@main
+        uses: ./.github/actions/flat_meta_generation
         with:
           docker_image: ${{ inputs.docker_image }}
-          workspace_path: ${{ steps.sync.outputs.workspace_path }}
+          workspace_path: ${{ github.workspace }}/kernel
           s3_bucket: qli-prd-kernel-gh-artifacts
-          rootfs_matrix: ${{inputs.rootfs_matrix }}
+          machine: ${{ matrix.target.machine }}
+          rootfs: ${{ matrix.target.rootfs }}
+          firmwareid: ${{ matrix.target.firmwareid }}
+          hypervisor: ${{ matrix.target.hypervisor }}
+          storage: ${{ matrix.target.storage }}
+
+      - name: Upload flat build artifact
+        if: ${{ matrix.target.rootfs != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flat-${{ matrix.target.rootfs }}
+          path: ${{ github.workspace }}/kernel/qcom-multimedia-image-${{ matrix.target.rootfs }}.rootfs.qcomflash.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  upload:
+    needs: [build, flat_build]
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [ self-hosted, kernel-prd-u2404-x64-large-od-ephem ]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    outputs:
+      s3_location: ${{ steps.upload-artifacts.outputs.s3_location }}
+    steps:
+      - name: Download build base artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-base
+          path: ${{ runner.temp }}/build-base
+
+      - name: Download flat build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: flat-*
+          path: ${{ runner.temp }}/flat-artifacts
+          merge-multiple: true
 
       - name: Create file list for artifacts upload
+        shell: bash
         run: |
-          workspace=${{ steps.sync.outputs.workspace_path }}
-          mkdir -p $workspace/../artifacts/
-          touch $workspace/../artifacts/file_list.txt
-          cd $workspace/../kobj/tar-install
-          tar -cJf ${{ github.workspace }}/modules.tar.xz lib/modules/
-          
-          echo "${{ github.workspace }}/modules.tar.xz" >> $workspace/../artifacts/file_list.txt
-          echo "$workspace/../kobj/arch/arm64/boot/Image" >> $workspace/../artifacts/file_list.txt
-          echo "$workspace/../kobj/vmlinux" >> $workspace/../artifacts/file_list.txt
+          set -euo pipefail
+          tar -xf "${{ runner.temp }}/build-base/kobj-min.tar" -C "${{ runner.temp }}"
+          tar -cJf "${{ runner.temp }}/build-base/base-artifacts/modules.tar.xz" -C "${{ runner.temp }}/kobj/tar-install" lib/modules
 
-          # Loop through all machines from the rootfs_matrix input
-          machines='${{ inputs.rootfs_matrix }}'
-          for machine in $(echo "$machines" | jq -r '.[].machine'); do
-            echo "$workspace/../kobj/arch/arm64/boot/dts/qcom/${machine}.dtb" >> $workspace/../artifacts/file_list.txt
+          file_list="${{ github.workspace }}/file_list.txt"
+          : > "$file_list"
+
+          echo "${{ runner.temp }}/build-base/base-artifacts/modules.tar.xz" >> "$file_list"
+          echo "${{ runner.temp }}/build-base/base-artifacts/Image" >> "$file_list"
+          echo "${{ runner.temp }}/build-base/base-artifacts/vmlinux" >> "$file_list"
+
+          for dtb in "${{ runner.temp }}/build-base/base-artifacts/dtbs/"*.dtb; do
+            echo "$dtb" >> "$file_list"
           done
 
-          # Loop through all rootfs_matrix and add flat meta to the list
-          rootfs_matrix='${{ inputs.rootfs_matrix }}'
-          for row in $(echo "$rootfs_matrix" | jq -c '.[]'); do
-            machine=$(echo "$row" | jq -r '.machine')
-            rootfs=$(echo "$row" | jq -r '.rootfs')
-            echo $workspace/qcom-multimedia-image-${rootfs}.rootfs.qcomflash.tar.gz >> $workspace/../artifacts/file_list.txt
+          for flat_img in "${{ runner.temp }}/flat-artifacts/"*.tar.gz; do
+            echo "$flat_img" >> "$file_list"
           done
-
-      - name: Configure AWS
-        run: |
-          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" && \
-          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" && \
-          aws configure set default.region "$AWS_REGION"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Upload artifacts
         id: upload-artifacts
         uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
         with:
           s3_bucket: qli-prd-kernel-gh-artifacts
-          local_file: ${{ steps.sync.outputs.workspace_path }}/../artifacts/file_list.txt
+          local_file: ${{ github.workspace }}/file_list.txt
           mode: multi-upload
 
       - name: Clean up
         run: |
-          rm -rf artifacts
-          rm -rf kobj
-          rm -rf modules.tar.xz
+          rm -rf "${{ runner.temp }}/build-base"
+          rm -rf "${{ runner.temp }}/flat-artifacts"
+          rm -rf "${{ runner.temp }}/kobj"
+          rm -rf file_list.txt
 
       - name: Update summary
         if: success() || failure()
         shell: bash
         run: |
-          if [ ${{ steps.build_workspace.outcome }} == 'success' ]; then
+          if [ "${{ steps.upload-artifacts.outcome }}" == "success" ]; then
             echo "Build was successful"
             summary=":heavy_check_mark: Build Success"
           else
