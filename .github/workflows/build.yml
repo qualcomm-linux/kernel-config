@@ -87,6 +87,7 @@ jobs:
           cp -a "$workspace/../kobj/tar-install" "$kobj_stage/kobj/"
           mkdir -p "$kobj_stage/kobj/arch/arm64/boot"
           cp "$workspace/../kobj/arch/arm64/boot/Image" "$kobj_stage/kobj/arch/arm64/boot/Image"
+          cp "$workspace/../kobj/vmlinux" "$kobj_stage/kobj/vmlinux"
 
           machines="$(echo '${{ inputs.rootfs_matrix }}' | jq -r '.[].machine' | sort -u)"
           for machine in $machines; do
