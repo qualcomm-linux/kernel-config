@@ -42,7 +42,7 @@ jobs:
 
   build:
     needs: [loading, init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build.yml@main
+    uses: qualcomm-linux/kernel-config/.github/workflows/build.yml@test_parallel_build
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
