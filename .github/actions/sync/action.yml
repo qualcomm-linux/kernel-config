@@ -70,16 +70,17 @@ runs:
           exit 1
         fi
 
+        mkdir -p kernel-config
         awk '
           $1 == "baseline" {
             print "baseline https://github.com/qualcomm-linux/kernel-topics.git baseline"
             next
           }
           { print }
-        ' "$config_file" > merge.conf
+        ' "$config_file" > kernel-config/qcom-next.conf
 
-        echo "File 'merge.conf' created successfully for full automerge from kernel-topics/baseline."
-        cat merge.conf
+        echo "File 'kernel-config/qcom-next.conf' created successfully for full automerge from kernel-topics/baseline."
+        cat kernel-config/qcom-next.conf
 
     - name: Run full automerge
       id: automerge
@@ -88,7 +89,7 @@ runs:
       run: |
         set -e
         cd kernel
-        ../automerge/ci-merge -f ../merge.conf -t head -n
+        ../automerge/ci-merge -f ../kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n | tee ../merge.log
 
     - name: Fetch PR
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
