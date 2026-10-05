@@ -54,7 +54,7 @@ jobs:
 
       - name: Sync codebase
         id: sync
-        uses: qualcomm-linux/kernel-config/.github/actions/sync@main
+        uses: qualcomm-linux/kernel-config/.github/actions/sync@kernel_topic_full_automerge
         with:
           base_branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number}}
