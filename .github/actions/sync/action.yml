@@ -57,96 +57,36 @@ runs:
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
-        git clone https://github.com/qualcomm-linux/kernel.git
+        git clone https://github.com/qualcomm-linux/kernel-topics.git kernel
         git clone https://github.com/qualcomm-linux/automerge.git
 
-    - name: Scan PR Description
+    - name: Create full automerge configuration
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
-        curl -L \
-        -H "Authorization: Bearer ${{ inputs.GH_TOKEN }}" \
-        -H "Accept: application/vnd.github+json" \
-        -H "X-GitHub-Api-Version: 2022-11-28" \
-        "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/${{ inputs.pr_number }}" | \
-        jq --raw-output .body > pr-desc
-        cat pr-desc
-
-    - name: Retrieve Dependencies
-      if: inputs.repo == 'qualcomm-linux/kernel-topics'
-      shell: bash
-      run: |
-        set +o pipefail
-        cat pr-desc | \
-        grep --perl-regexp '^Depends-on:' | \
-        cut -d ':' -f2 | \
-        tr ',' '\n' | \
-        sed 's/^ *//' | \
-        sed 's/ *$//' | \
-        sed 's/^#//' | \
-        sed '/^$/d' > pr-deps
-        cat pr-deps
-
-    - name: Validate Dependencies
-      if: inputs.repo == 'qualcomm-linux/kernel-topics'
-      env:
-        GH_TOKEN: ${{ inputs.GH_TOKEN }}
-      shell: bash
-      run: |
-        touch topic-branches
-        touch invalid-deps
-        base_pr=${{ inputs.pr_number }}
-
-        while read -r dep; do
-          [ -z "$dep" ] && continue
-
-          if [[ "$dep" =~ ^[0-9]+$ ]]; then
-            resp=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/$dep")
-            if echo "$resp" | jq -e ".merged_at != null" > /dev/null; then
-              base_ref=$(echo "$resp" | jq -r .base.ref)
-              echo "$dep,$base_ref" >> topic-branches
-            else
-              echo "#$dep" >> invalid-deps
-            fi
-          elif git ls-remote --exit-code --heads https://github.com/qualcomm-linux/kernel-topics.git "$dep" > /dev/null 2>&1; then
-            echo "$dep,$dep" >> topic-branches
-          else
-            echo "#$dep" >> invalid-deps
-          fi
-        done < pr-deps
-
-        if [ -s "topic-branches" ]; then
-          sort -t, -k2,2 -u topic-branches -o topic-branches
+        config_file="$GITHUB_ACTION_PATH/../../../qcom-next.conf"
+        if [ ! -f "$config_file" ]; then
+          echo "ERROR: qcom-next.conf not found at $config_file"
+          exit 1
         fi
 
-        if [ -s "invalid-deps" ]; then
-            msg="CI build failed due to invalid or unmerged dependencies: $(paste -sd ' ' < invalid-deps)"
-            json=$(jq -n --arg body "$msg" '{body: $body}')
-            curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/qualcomm-linux/kernel-topics/issues/"$base_pr"/comments \
-            -d "$json"
-            exit 1
-        fi
-        cat topic-branches
+        awk '
+          $1 == "baseline" {
+            print "baseline https://github.com/qualcomm-linux/kernel-topics.git baseline"
+            next
+          }
+          { print }
+        ' "$config_file" > merge.conf
 
-    - name: Create merge configuration
-      if: inputs.repo == 'qualcomm-linux/kernel-topics'
-      shell: bash
-      run: |
-        TOPIC_BRANCH=${{ inputs.base_branch }}
-        echo "baseline https://github.com/qualcomm-linux/kernel.git qcom-next" > merge.conf
-        while IFS=',' read -r pr_number topic_branch; do
-          echo "$topic_branch https://github.com/qualcomm-linux/kernel-topics.git $topic_branch" >> merge.conf
-        done < topic-branches
-        echo "topic https://github.com/qualcomm-linux/kernel-topics.git $TOPIC_BRANCH" >> merge.conf
-        echo "File 'merge.conf' created successfully."
+        echo "File 'merge.conf' created successfully for full automerge from kernel-topics/baseline."
         cat merge.conf
 
-    - name: Run auto merge
+    - name: Run full automerge
       id: automerge
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
+        set -e
         cd kernel
         ../automerge/ci-merge -f ../merge.conf -t head -n
 
@@ -154,10 +94,22 @@ runs:
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
+        set -e
         cd kernel
         git fetch https://github.com/qualcomm-linux/kernel-topics.git pull/${{inputs.pr_number}}/head:pr-${{inputs.pr_number}}
+
+        pr_sha=$(git rev-parse pr-${{inputs.pr_number}})
+        if [ "$pr_sha" != "${{ inputs.sha }}" ]; then
+          echo "ERROR: fetched PR head $pr_sha does not match requested SHA ${{ inputs.sha }}"
+          exit 1
+        fi
+
         git merge pr-${{inputs.pr_number}} --no-commit
-        git commit -m "Merged PR ${{inputs.pr_number}}"
+        if ! git diff --cached --quiet; then
+          git commit -m "Merged PR #${{inputs.pr_number}} after full automerge"
+        else
+          echo "Nothing to commit. PR may already be included in the full automerge tree."
+        fi
 
     - name: Fetch PR
       if: inputs.repo == 'qualcomm-linux/kernel'
