@@ -47,6 +47,7 @@ jobs:
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
       pr_number: ${{ inputs.pr }}
+      sha: ${{ inputs.sha }}
       branch: ${{ inputs.ref }}
       repo: ${{ inputs.repo }}
       rootfs_matrix: ${{ needs.loading.outputs.rootfs_matrix }}
@@ -59,6 +60,7 @@ jobs:
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
       pr_number: ${{ inputs.pr }}
+      sha: ${{ inputs.sha }}
       branch: ${{ inputs.ref }}
       repo: ${{ inputs.repo }}
       variant: RT

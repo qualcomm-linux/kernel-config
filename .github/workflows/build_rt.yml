@@ -10,6 +10,10 @@ on:
         description: PR number
         type: string
         required: false
+      sha:
+        description: Head sha of the PR
+        type: string
+        required: false
       branch:
         description: Branch name
         type: string
@@ -40,6 +44,7 @@ jobs:
         with:
           base_branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number}}
+          sha: ${{ inputs.sha }}
           GH_TOKEN: ${{ secrets.PAT }}
           repo: ${{ inputs.repo }}
 

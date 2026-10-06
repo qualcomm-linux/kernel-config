@@ -8,6 +8,9 @@ inputs:
   pr_number:
     description: PR number
     required: false
+  sha:
+    description: Head sha of the PR
+    required: false
   GH_TOKEN:
     description: Access Token
     required: true
