@@ -93,7 +93,7 @@ jobs:
     steps:
       - name: Build Yocto
         id: build_yocto
-        uses: qualcomm-linux/kernel-config/.github/actions/build_yocto@main
+        uses: qualcomm-linux/kernel-config/.github/actions/build_yocto@sgaud_meta-qcom
         with:
           workspace_path: ${{ github.workspace }}
           s3_bucket: qli-prd-kernel-gh-artifacts

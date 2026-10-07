@@ -163,7 +163,7 @@ runs:
         lock_arg=""
         if [[ "${{ env.base }}" == "tip" ]]; then
           echo "Building from tip"
-          git clone https://github.com/qualcomm-linux/meta-qcom.git -b ${{env.meta_qcom_ref}} "${{ env.KAS_WORK_DIR}}/meta-qcom"
+          git clone https://github.com/sgaud-quic/meta-qcom.git -b ${{env.meta_qcom_ref}} "${{ env.KAS_WORK_DIR}}/meta-qcom"
           meta_qcom_sha=$(git -C "${{ env.KAS_WORK_DIR}}/meta-qcom" rev-parse HEAD)
           echo $meta_qcom_sha > build_id.txt
           cat build_id.txt
