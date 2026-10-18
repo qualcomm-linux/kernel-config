@@ -268,3 +268,8 @@ git -C "$KERNEL_DIR" remote remove manifest-target 2>/dev/null || true
 info ""
 info "RESULT: PASS - ${CANDIDATE_SHA:0:12} is publishable for digest ${DIGEST:0:16}"
 info "  lookup with: git ls-remote https://github.com/${CANDIDATE_REPO} $MANIFEST_REF"
+
+# The published tree carries qcom-next/topic_SHA1 and qcom-next/merge.log,
+# added by generation. Recording therefore describes a commit that states its
+# own provenance, which is what makes a published qcom-next auditable without
+# access to the CI run that built it.
