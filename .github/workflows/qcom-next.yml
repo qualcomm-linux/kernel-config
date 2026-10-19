@@ -142,20 +142,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  cicd:
-    name: Run CI/CD on the candidate
+  # pre_merge and pre_merge_yocto are independent, so they run as two jobs and
+  # overlap. Chaining them as steps in one job doubled the wall time for no
+  # reason, and each takes hours.
+  premerge:
+    name: pre_merge
     needs: candidate
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
       - name: Checkout kernel-config
         uses: actions/checkout@v4
 
-      - name: pre_merge
-        id: premerge
-        continue-on-error: true
+      - name: Run pre_merge against the candidate
         env:
           GH_TOKEN: ${{ secrets.SPAT || github.token }}
           # Through env, not interpolated into the script: a value expanded
@@ -171,9 +169,15 @@ jobs:
               --sha "${CANDIDATE_SHA}" \
               --pr "${PR}"
 
-      - name: pre_merge_yocto
-        id: yocto
-        continue-on-error: true
+  yocto:
+    name: pre_merge_yocto
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+
+      - name: Run pre_merge_yocto against the candidate
         env:
           GH_TOKEN: ${{ secrets.SPAT || github.token }}
           CANDIDATE_REF: ${{ needs.candidate.outputs.ref }}
@@ -188,40 +192,60 @@ jobs:
               --pr "${PR}" \
               --extra base=tag
 
+  report:
+    name: Report
+    # always(), because this has to report a failed or skipped gate too. A job
+    # whose needs include a skipped job is otherwise skipped before its if is
+    # evaluated.
+    needs: [candidate, premerge, yocto]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
       - name: Comment on the PR
-        if: ${{ always() }}
         continue-on-error: true
         uses: actions/github-script@v7
         env:
           CANDIDATE_REF: ${{ needs.candidate.outputs.ref }}
           CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
           KERNEL_REPO: ${{ env.KERNEL_REPO }}
-          PREMERGE: ${{ steps.premerge.outcome }}
-          YOCTO: ${{ steps.yocto.outcome }}
+          CANDIDATE: ${{ needs.candidate.result }}
+          PREMERGE: ${{ needs.premerge.result }}
+          YOCTO: ${{ needs.yocto.result }}
         with:
           script: |
             const marker = '<!-- qcom-next -->';
-            const ref = process.env.CANDIDATE_REF;
-            const sha = process.env.CANDIDATE_SHA;
+            const ref = process.env.CANDIDATE_REF || '';
+            const sha = process.env.CANDIDATE_SHA || '';
             const repo_ = process.env.KERNEL_REPO;
+            const built = process.env.CANDIDATE;
             const pre = process.env.PREMERGE;
             const yocto = process.env.YOCTO;
-            const ok = pre === 'success' && yocto === 'success';
+            const ok = built === 'success' && pre === 'success' && yocto === 'success';
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}` +
+                           `/actions/runs/${process.env.GITHUB_RUN_ID}`;
 
-            const body = [
+            const lines = [
               marker,
               `## qcom-next candidate: ${ok ? 'ready to merge' : 'needs attention'}`,
               '',
-              `- Candidate: [\`${ref}\`](https://github.com/${repo_}/tree/${ref}) in \`${repo_}\``,
-              `- Commit: \`${sha}\``,
+              `- Candidate tree: \`${built}\``,
               `- pre_merge: \`${pre}\``,
               `- pre_merge_yocto: \`${yocto}\``,
-              '',
-              ok
-                ? 'Merging this PR publishes this exact commit to `qcom-next`.'
-                : 'Fix the failures and push again; the candidate is rebuilt in place.',
-            ].join('\n');
+            ];
+            if (ref) {
+              lines.push(`- Branch: [\`${ref}\`](https://github.com/${repo_}/tree/${ref}) in \`${repo_}\``);
+              lines.push(`- Commit: \`${sha}\``);
+            }
+            lines.push(`- [Full run](${runUrl})`);
+            lines.push('');
+            lines.push(ok
+              ? 'Merging this PR publishes this exact commit to `qcom-next`.'
+              : 'Fix the failures and push again; the candidate is rebuilt in place.');
 
+            const body = lines.join('\n');
             const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
             const existing = await github.paginate(
@@ -235,12 +259,18 @@ jobs:
 
       - name: Verdict
         env:
-          PREMERGE: ${{ steps.premerge.outcome }}
-          YOCTO: ${{ steps.yocto.outcome }}
+          CANDIDATE: ${{ needs.candidate.result }}
+          PREMERGE: ${{ needs.premerge.result }}
+          YOCTO: ${{ needs.yocto.result }}
         run: |
           set -euo pipefail
+          echo "candidate       : $CANDIDATE"
           echo "pre_merge       : $PREMERGE"
           echo "pre_merge_yocto : $YOCTO"
-          [ "$PREMERGE" = "success" ] || { echo "::error title=qcom-next::pre_merge failed"; exit 1; }
-          [ "$YOCTO" = "success" ] || { echo "::error title=qcom-next::pre_merge_yocto failed"; exit 1; }
-          echo "both CI/CD runs passed"
+          fail=0
+          [ "$CANDIDATE" = "success" ] || { echo "::error title=qcom-next::the candidate tree was not built"; fail=1; }
+          [ "$PREMERGE" = "success" ]  || { echo "::error title=qcom-next::pre_merge did not pass ($PREMERGE)"; fail=1; }
+          [ "$YOCTO" = "success" ]     || { echo "::error title=qcom-next::pre_merge_yocto did not pass ($YOCTO)"; fail=1; }
+          [ "$fail" -eq 0 ] || exit 1
+          echo "candidate built and both CI/CD runs passed"
+
