@@ -152,3 +152,12 @@ jobs:
       repo: qualcomm-linux/kernel
       ref: ${{ needs.candidate.outputs.ref }}
       pr: "0"
+
+  yocto:
+    name: pre_merge_yocto
+    needs: candidate
+    uses: ./.github/workflows/pre-merge-yocto.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.candidate.outputs.ref }}
+      sha: ${{ needs.candidate.outputs.sha }}

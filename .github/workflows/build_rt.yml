@@ -34,10 +34,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: kernel-config-ci
 
       - name: Sync codebase
         id: sync
-        uses: ./.github/actions/sync
+        uses: ./kernel-config-ci/.github/actions/sync
         with:
           base_branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number}}

@@ -27,7 +27,7 @@ runs:
       shell: bash
       run: |
         echo "Cleaning up workspace..."
-        rm -rf ${{ github.workspace }}/*
+        rm -rf "${{ github.workspace }}/kernel" "${{ github.workspace }}/automerge"
         echo "Workspace cleaned successfully!"
 
     - name: Classify sync mode
@@ -57,6 +57,7 @@ runs:
         fetch-depth: 0
         repository: ${{ inputs.repo }}
         ref: ${{ inputs.base_branch }}
+        path: kernel
         token: ${{ inputs.GH_TOKEN }}
 
     - name: Configure git
@@ -68,6 +69,7 @@ runs:
     - name: Sync with latest changes
       if: steps.mode.outputs.mode == 'pr'
       shell: bash
+      working-directory: ${{ github.workspace }}/kernel
       run: |
         set -e
         echo "Syncing with latest changes..."
@@ -77,6 +79,7 @@ runs:
     - name: Record the checked out commit
       if: steps.mode.outputs.mode == 'ref'
       shell: bash
+      working-directory: ${{ github.workspace }}/kernel
       run: |
         set -euo pipefail
         echo "Testing ${{ inputs.repo }} at ${{ inputs.base_branch }}"
@@ -192,6 +195,7 @@ runs:
     - name: Fetch PR
       if: steps.mode.outputs.mode == 'pr'
       shell: bash
+      working-directory: ${{ github.workspace }}/kernel
       run: |
         git checkout ${{ inputs.base_branch }}
         git fetch https://github.com/${{ inputs.repo }}.git pull/${{inputs.pr_number}}/head:pr-${{inputs.pr_number}}
@@ -209,8 +213,4 @@ runs:
         SYNC_MODE: ${{ steps.mode.outputs.mode }}
         WORKSPACE: ${{ github.workspace }}
       run: |
-        if [ "$SYNC_MODE" = "topics" ]; then
-          echo "workspace=${WORKSPACE}/kernel" >> "$GITHUB_OUTPUT"
-        else
-          echo "workspace=${WORKSPACE}" >> "$GITHUB_OUTPUT"
-        fi
+        echo "workspace=${WORKSPACE}/kernel" >> "$GITHUB_OUTPUT"
