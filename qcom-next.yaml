@@ -27,7 +27,8 @@
 #      so what ships is what was tested.
 #
 # Only a change to this file starts any of that. Other kernel-config PRs do
-# not trigger it.
+# not trigger it, and any change here does -- including a comment, since the
+# trigger is the file itself rather than a diff of the parsed contents.
 #
 # Bootstrapped from qcom-next.conf on 2026-10-18 by
 # scripts/bootstrap_qcom_next_yaml.py.
