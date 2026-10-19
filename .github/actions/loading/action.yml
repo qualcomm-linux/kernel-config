@@ -73,7 +73,11 @@ runs:
           console.log("Boot Bins:", bootbins);
 
           // rootfs matrix: machine, rootfs
-          const branch = process.env.INPUT_BRANCH || "";
+          const inputBranch = process.env.INPUT_BRANCH || "";
+          const branch = inputBranch.startsWith('qcom-next-candidate') ? 'qcom-next-staging' : inputBranch;
+          if (inputBranch !== branch) {
+            console.log(`Using ${branch} matrix for candidate branch ${inputBranch}`);
+          }
           const rootfs_matrix = Object.values(targets)
             .filter(({ rootfs }) => rootfs && rootfs.trim() !== '')
             .filter(({ branches }) => !branch || !branches || branches.includes(branch))

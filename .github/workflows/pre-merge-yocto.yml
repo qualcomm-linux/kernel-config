@@ -33,6 +33,11 @@ on:
         type: string
         default: ''
         required: false
+      matrix_branch:
+        description: Branch used to select test/rootfs targets. Defaults to ref.
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       pr:
@@ -62,6 +67,11 @@ on:
         type: string
         default: ''
         required: false
+      matrix_branch:
+        description: Branch used to select test/rootfs targets. Defaults to ref.
+        type: string
+        required: false
+        default: ""
 
 jobs:
   init-status:
@@ -83,7 +93,7 @@ jobs:
     uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
     secrets: inherit
     with:
-      branch: ${{ inputs.ref }}
+      branch: ${{ inputs.matrix_branch != '' && inputs.matrix_branch || inputs.ref }}
 
   build_yocto:
     name: Build Yocto

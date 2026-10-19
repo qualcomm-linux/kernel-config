@@ -151,6 +151,7 @@ jobs:
     with:
       repo: qualcomm-linux/kernel
       ref: ${{ needs.candidate.outputs.ref }}
+      sha: ${{ needs.candidate.outputs.sha }}
       pr: "0"
 
   yocto:
