@@ -106,9 +106,9 @@ jobs:
           fi
 
           ref="qcom-next-candidate-${PR}"
-          sha="$(cat out/head.txt)"
 
           cd kernel-topics
+          sha="$(git rev-parse refs/heads/qcom-next)"
           git remote remove candidate 2>/dev/null || true
           git remote add candidate \
               "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${KERNEL_REPO}.git"
@@ -122,8 +122,11 @@ jobs:
       - name: Summary
         if: ${{ always() }}
         run: |
-          if [ -f out/summary.md ]; then
-            cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f kernel-topics/qcom-next/topic_SHA1 ]; then
+            echo "### qcom-next candidate" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Generated branch: ${{ steps.push.outputs.ref }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Generated SHA: ${{ steps.push.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "The tree was not built; see the job log." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -134,10 +137,9 @@ jobs:
         with:
           name: qcom-next-candidate
           path: |
-            out/merge.log
-            out/qcom-next.conf
-            out/topics.tsv
-            out/summary.md
+            merge.log
+            kernel-topics/qcom-next/merge.log
+            kernel-topics/qcom-next/topic_SHA1
           if-no-files-found: warn
           retention-days: 14
 
