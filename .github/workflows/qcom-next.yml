@@ -68,8 +68,15 @@ jobs:
           fetch-tags: true
           token: ${{ secrets.SPAT || github.token }}
 
+      - name: Set up Python
+        # Needed: the runner's system Python is marked externally managed
+        # (PEP 668), so pip refuses to install into it.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install PyYAML
-        run: python3 -m pip install --quiet --upgrade pyyaml
+        run: python -m pip install --quiet --upgrade pyyaml
 
       - name: Build the tree
         env:
@@ -115,7 +122,12 @@ jobs:
 
       - name: Summary
         if: ${{ always() }}
-        run: cat out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          if [ -f out/summary.md ]; then
+            cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The tree was not built; see the job log." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload logs
         if: ${{ always() }}
