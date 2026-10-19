@@ -1,0 +1,128 @@
+---
+# Publish qcom-next when a qcom-next.yaml PR is merged.
+#
+# The candidate branch qcom-next-candidate-<pr> is the tree that pre_merge and
+# pre_merge_yocto passed, so that exact commit becomes qcom-next. Nothing is
+# rebuilt: a rebuild would produce a different commit id, because ci-merge
+# stamps merge commits with the current time.
+#
+# Only a merged PR that touched qcom-next.yaml gets here.
+name: qcom-next publish
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - qcom-next.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never two publications at once, and never cancel one mid-push.
+  group: qcom-next-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish qcom-next
+    if: ${{ github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    env:
+      KERNEL_REPO: qualcomm-linux/kernel
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet --upgrade pyyaml
+
+      - name: Publish
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.SPAT }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_PUSH_TOKEN:-}" ]; then
+            echo "::error title=qcom-next publish::SPAT is needed to push qcom-next"
+            exit 1
+          fi
+
+          ref="qcom-next-candidate-${PR}"
+          url="https://x-access-token:${GH_PUSH_TOKEN}@github.com/${KERNEL_REPO}.git"
+
+          # Blobless: this only needs the commit graph to check the pins, not
+          # file contents, and the kernel is far too big to clone in full here.
+          git init --quiet kernel
+          cd kernel
+          git remote add origin "$url"
+          git config remote.origin.promisor true
+          git config remote.origin.partialclonefilter blob:none
+
+          if ! git fetch --quiet --filter=blob:none --no-tags origin \
+                 "+refs/heads/${ref}:refs/candidate"; then
+            echo "::error title=qcom-next publish::no candidate branch ${ref} in ${KERNEL_REPO}. Re-run the PR CI, then re-run this workflow."
+            exit 1
+          fi
+          candidate="$(git rev-parse refs/candidate)"
+          echo "candidate : ${candidate:0:12} (${ref})"
+
+          # The merged file is the one that counts. If another PR merged first,
+          # this candidate was built against an older base and must not be
+          # published, so check the merged pins really are in it.
+          python3 ../scripts/qcom_next_conf.py \
+              --config ../qcom-next.yaml pins > /tmp/pins.tsv
+
+          missing=0
+          while IFS=$'\t' read -r kind repo sha name; do
+            case "$kind" in base|topic) ;; *) continue ;; esac
+            git fetch --quiet --filter=blob:none --no-tags origin "$sha" 2>/dev/null || true
+            if ! git merge-base --is-ancestor "$sha" "$candidate" 2>/dev/null; then
+              printf '  not in the candidate: %-28s %s\n' "${name:-base}" "${sha:0:12}"
+              missing=$((missing + 1))
+            fi
+          done < /tmp/pins.tsv
+
+          if [ "$missing" -gt 0 ]; then
+            echo "::error title=qcom-next publish::${ref} does not match the merged qcom-next.yaml ($missing pin(s) missing). It was built against an older base; re-run the PR CI for the merged file."
+            exit 1
+          fi
+          echo "every pin in the merged qcom-next.yaml is in the candidate"
+
+          # --force-with-lease against the head just read, so a concurrent
+          # change rejects the push instead of being discarded.
+          old="$(git ls-remote origin refs/heads/qcom-next | awk '{print $1; exit}')"
+          echo "qcom-next : ${old:-<none>} -> ${candidate:0:12}"
+
+          if [ "$old" = "$candidate" ]; then
+            echo "already published; nothing to do"
+          else
+            git push --force-with-lease="refs/heads/qcom-next:${old}" \
+                origin "${candidate}:refs/heads/qcom-next" 2>&1 \
+              | sed 's/x-access-token:[^@]*@/x-access-token:***@/g'
+            echo "published ${candidate:0:12} to ${KERNEL_REPO} qcom-next"
+          fi
+
+          # The candidate branch has served its purpose.
+          git push --quiet origin --delete "$ref" 2>/dev/null \
+            && echo "deleted ${ref}" || echo "could not delete ${ref}; harmless"
+
+          {
+            echo "### qcom-next published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Published commit | \`${candidate}\` |"
+            echo "| Previous head | \`${old:-none}\` |"
+            echo "| From PR | #${PR} |"
+            echo "| Candidate branch | \`${ref}\` (deleted) |"
+            echo ""
+            echo "Rollback: \`git push --force-with-lease=refs/heads/qcom-next:${candidate} \\"
+            echo "  https://github.com/${KERNEL_REPO} ${old:-<none>}:refs/heads/qcom-next\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Explain a failure
+        if: ${{ failure() }}
+        run: |
+          echo "::error title=qcom-next publish::qcom-next was not updated. The merged config is ahead of qcom-next; re-run this workflow once the cause is fixed. Nothing was partially published."

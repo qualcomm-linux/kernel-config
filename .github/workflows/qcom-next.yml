@@ -1,0 +1,234 @@
+---
+# CI for a qcom-next.yaml change.
+#
+#   PR edits qcom-next.yaml
+#     -> build the tree the file describes
+#     -> push it as qcom-next-candidate-<pr>
+#     -> run pre_merge and pre_merge_yocto against that branch
+#     -> integrator reviews and merges; qcom-next-publish.yml takes it from there
+#
+# Only qcom-next.yaml triggers this. Any other kernel-config PR is untouched.
+#
+# The candidate branch is named after the PR, so a new push replaces it instead
+# of leaving a trail of refs behind.
+name: qcom-next
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - qcom-next.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  # One candidate per PR. A new push supersedes the running CI/CD.
+  group: qcom-next-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Candidates live in the kernel repo because that is where the CI/CD
+  # workflows can run: pre_merge.yml only runs its test job for
+  # qualcomm-linux/kernel.
+  KERNEL_REPO: qualcomm-linux/kernel
+  TOPICS_REPO: qualcomm-linux/kernel-topics
+  AUTOMERGE_REPO: qualcomm-linux/automerge
+
+jobs:
+  candidate:
+    name: Build and push the candidate
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    outputs:
+      ref: ${{ steps.push.outputs.ref }}
+      sha: ${{ steps.push.outputs.sha }}
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+        with:
+          path: kernel-config
+
+      - name: Checkout automerge
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.AUTOMERGE_REPO }}
+          path: automerge
+          token: ${{ secrets.SPAT || github.token }}
+
+      - name: Checkout kernel-topics
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TOPICS_REPO }}
+          path: kernel-topics
+          # Full history and tags: a pinned sha is often behind the branch tip,
+          # and after a rebase it is only reachable through its tag.
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.SPAT || github.token }}
+
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet --upgrade pyyaml
+
+      - name: Build the tree
+        env:
+          # The kernel repos reject author/committer emails matching
+          # .*@qualcomm\.com, so the in-tree log commit uses qti.qualcomm.com.
+          GIT_AUTHOR_NAME: qcom-next CI
+          GIT_AUTHOR_EMAIL: qcom-next-ci@qti.qualcomm.com
+          GIT_COMMITTER_NAME: qcom-next CI
+          GIT_COMMITTER_EMAIL: qcom-next-ci@qti.qualcomm.com
+        run: |
+          set -euo pipefail
+          bash kernel-config/scripts/qcom_next_tree.sh \
+              --config kernel-config/qcom-next.yaml \
+              --kernel-dir kernel-topics \
+              --automerge automerge \
+              --out-dir out
+
+      - name: Push the candidate
+        id: push
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.SPAT }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_PUSH_TOKEN:-}" ]; then
+            echo "::error title=qcom-next::SPAT is needed to push the candidate to ${KERNEL_REPO}"
+            exit 1
+          fi
+
+          ref="qcom-next-candidate-${PR}"
+          sha="$(cat out/head.txt)"
+
+          cd kernel-topics
+          git remote remove candidate 2>/dev/null || true
+          git remote add candidate \
+              "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${KERNEL_REPO}.git"
+          git push --force candidate "refs/heads/qcom-next:refs/heads/${ref}"
+          git remote remove candidate
+
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "pushed ${KERNEL_REPO} ${ref} @ ${sha:0:12}"
+
+      - name: Summary
+        if: ${{ always() }}
+        run: cat out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qcom-next-candidate
+          path: |
+            out/merge.log
+            out/qcom-next.conf
+            out/topics.tsv
+            out/summary.md
+          if-no-files-found: warn
+          retention-days: 14
+
+  cicd:
+    name: Run CI/CD on the candidate
+    needs: candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+
+      - name: pre_merge
+        id: premerge
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.SPAT || github.token }}
+          # Through env, not interpolated into the script: a value expanded
+          # into a run block is executed by the shell.
+          CANDIDATE_REF: ${{ needs.candidate.outputs.ref }}
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          bash scripts/run_cicd.sh \
+              --workflow pre_merge.yml \
+              --repo "${KERNEL_REPO}" \
+              --ref "${CANDIDATE_REF}" \
+              --sha "${CANDIDATE_SHA}" \
+              --pr "${PR}"
+
+      - name: pre_merge_yocto
+        id: yocto
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.SPAT || github.token }}
+          CANDIDATE_REF: ${{ needs.candidate.outputs.ref }}
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          bash scripts/run_cicd.sh \
+              --workflow pre-merge-yocto.yml \
+              --repo "${KERNEL_REPO}" \
+              --ref "${CANDIDATE_REF}" \
+              --sha "${CANDIDATE_SHA}" \
+              --pr "${PR}" \
+              --extra base=tag
+
+      - name: Comment on the PR
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          CANDIDATE_REF: ${{ needs.candidate.outputs.ref }}
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          KERNEL_REPO: ${{ env.KERNEL_REPO }}
+          PREMERGE: ${{ steps.premerge.outcome }}
+          YOCTO: ${{ steps.yocto.outcome }}
+        with:
+          script: |
+            const marker = '<!-- qcom-next -->';
+            const ref = process.env.CANDIDATE_REF;
+            const sha = process.env.CANDIDATE_SHA;
+            const repo_ = process.env.KERNEL_REPO;
+            const pre = process.env.PREMERGE;
+            const yocto = process.env.YOCTO;
+            const ok = pre === 'success' && yocto === 'success';
+
+            const body = [
+              marker,
+              `## qcom-next candidate: ${ok ? 'ready to merge' : 'needs attention'}`,
+              '',
+              `- Candidate: [\`${ref}\`](https://github.com/${repo_}/tree/${ref}) in \`${repo_}\``,
+              `- Commit: \`${sha}\``,
+              `- pre_merge: \`${pre}\``,
+              `- pre_merge_yocto: \`${yocto}\``,
+              '',
+              ok
+                ? 'Merging this PR publishes this exact commit to `qcom-next`.'
+                : 'Fix the failures and push again; the candidate is rebuilt in place.',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const existing = await github.paginate(
+              github.rest.issues.listComments, { owner, repo, issue_number });
+            const mine = existing.find((c) => c.body && c.body.includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Verdict
+        env:
+          PREMERGE: ${{ steps.premerge.outcome }}
+          YOCTO: ${{ steps.yocto.outcome }}
+        run: |
+          set -euo pipefail
+          echo "pre_merge       : $PREMERGE"
+          echo "pre_merge_yocto : $YOCTO"
+          [ "$PREMERGE" = "success" ] || { echo "::error title=qcom-next::pre_merge failed"; exit 1; }
+          [ "$YOCTO" = "success" ] || { echo "::error title=qcom-next::pre_merge_yocto failed"; exit 1; }
+          echo "both CI/CD runs passed"

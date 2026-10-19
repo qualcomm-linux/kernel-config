@@ -1,30 +1,26 @@
 This repo contains the configuration that describes the content of the
-`qcom-next` integration kernel tree, plus the CI that validates and publishes
-it.
+`qcom-next` integration kernel tree, plus the CI that builds and publishes it.
 
-qcom-next is a deterministic function of its configuration:
+qcom-next is a function of its configuration:
 
-    qcom-next = f( base.sha , ordered topics[].sha , rerere cache revision )
+    qcom-next = base.sha + topics[].sha merged in order
 
-`qcom-next` is never hand-edited. The only way to change it is to change the
-configuration through a reviewed, CI-gated pull request on this repository.
+`qcom-next` is never hand-edited. The only way to change it is to change
+`qcom-next.yaml` through a reviewed pull request on this repository.
 
 
 Source of truth
 ---------------
 
-`qcom-next.yaml` is the single reviewed configuration. It records, for every
-consumed topic branch, the exact SHA that was validated ("stable SHA"), the tag
-pinning that SHA, and any inter-topic dependencies. It also records the upstream
-baseline the topics are merged on top of.
+`qcom-next.yaml` records, for every consumed topic branch, the exact SHA that
+was validated, the tag pinning that SHA, and the upstream baseline the topics
+are merged on top of.
 
-`qcom-next.conf` is the legacy flat format consumed by automerge's `ci-merge`.
-It is being retired: CI generates it from `qcom-next.yaml` as a disposable build
-artifact. Do not edit it by hand and do not treat it as reviewed content.
+`qcom-next.conf`, the flat three-column file automerge's `ci-merge` reads, is
+generated from the YAML on every run and thrown away. Do not edit it by hand.
 
 Topic branch owners live in `topic_maintainers.json`, keyed by the topic `name`
-used in `qcom-next.yaml`. Owner data is intentionally not duplicated into the
-YAML.
+used in `qcom-next.yaml`.
 
 
 Promoting a topic branch
@@ -38,236 +34,100 @@ Promoting a topic branch
    the consumed commit becomes unreachable the moment the topic branch is
    rebased.
 
-2. Open a pull request against this repository that changes only your topic's
-   `sha` and `tag` in `qcom-next.yaml`.
+2. Open a pull request against this repository that changes your topic's `sha`
+   and `tag` in `qcom-next.yaml`.
 
-3. CI validates the config, classifies the change, generates a candidate
-   qcom-next tree in which every other topic stays pinned at its current stable
-   SHA, and runs the build and test gates against that candidate.
+3. CI builds the tree those pins describe, with every other topic held at its
+   current SHA, and pushes it to `qualcomm-linux/kernel` as
+   `qcom-next-candidate-<pr>`. It then runs `pre_merge` and `pre_merge_yocto`
+   against that branch and reports both on the PR.
 
-4. If the gates pass and the required reviewers approve, the publication
-   workflow regenerates the tree, verifies it matches what was tested,
-   force-pushes `qcom-next`, and merges your config PR. Your new SHA is now the
-   stable SHA.
+4. When both pass, the integrator merges the PR. That force-pushes the exact
+   tested commit to `qcom-next` and deletes the candidate branch.
 
-If the gates fail, the PR is blocked and the evidence is posted on it. Push a
-fix and CI re-runs from the beginning.
+If CI/CD fails, push a fix. The candidate branch is rebuilt in place, so refs
+do not accumulate.
+
+Only a change to `qcom-next.yaml` starts any of this. Other kernel-config pull
+requests are unaffected.
 
 
 Upreving the kernel RC
 ----------------------
 
 An RC uprev changes only the `base` block and leaves every topic SHA untouched,
-so that any new failure is attributable to the upstream kernel rather than to a
-topic update. While an RC uprev is in flight, `promotion_state` is set to
-`frozen`: topic promotion PRs may still run validation and CI, but must not
-publish or merge until the state returns to `open`.
-
-Do not mix the two kinds of change. A PR that edits both `base` and topic SHAs
-is rejected as `invalid-mixed-change`, because a regression in it could not be
-attributed to either side.
+so a regression is attributable to upstream rather than to a topic update. It
+goes through the same PR flow.
 
 
-Merge conflicts
----------------
+What CI does
+------------
 
-Conflicts are replayed from a shared git rerere cache. If tree generation hits a
-conflict with no recorded resolution, CI fails and reports the conflicting
-paths on the PR. The topic owner then runs automerge locally with the same
-config and cache revision, resolves the conflict, and pushes the updated rerere
-cache. CI re-runs from validation through the full gates.
+    .github/workflows/qcom-next.yml          on a qcom-next.yaml PR
+      scripts/qcom_next_tree.sh                build the tree
+        scripts/qcom_next_conf.py                YAML -> ci-merge conf
+      push qcom-next-candidate-<pr>            to qualcomm-linux/kernel
+      scripts/run_cicd.sh                      pre_merge, pre_merge_yocto
+
+    .github/workflows/qcom-next-publish.yml  when that PR is merged
+      force-push the candidate to qcom-next, delete the candidate branch
+
+Two properties the scripts enforce rather than assume:
+
+  * After the merge, every pinned SHA must be an ancestor of the result. If
+    pinning had silently fallen back to a branch tip, the pinned commit would
+    not be there, and the run fails.
+
+  * Before publishing, every pin in the *merged* `qcom-next.yaml` must be in
+    the candidate. A candidate built against an older base is refused rather
+    than published.
+
+The generated tree carries `qcom-next/topic_SHA1` and `qcom-next/merge.log`, so
+a published `qcom-next` states which topic SHAs it is built from and how the
+merge went. Credentials are redacted from the log before it is committed.
 
 
-Validating locally
+Running it locally
 ------------------
 
-Requires `pyyaml` and `jsonschema`:
+Needs `pyyaml` and a checkout of automerge next to this repo:
 
-    pip install pyyaml jsonschema
+    pip install pyyaml
 
-Structural checks only, no network:
+Build the tree from the current config:
 
-    scripts/validate_qcom_next_config.py --offline
+    scripts/qcom_next_tree.sh \
+        --kernel-dir /path/to/kernel-topics \
+        --automerge  /path/to/automerge \
+        --out-dir    /tmp/qcom-next-out
 
-Full validation, including that every SHA and tag really exists on its remote
-and that each tag resolves to its configured SHA:
+Inspect what the config projects to, without building:
 
-    scripts/validate_qcom_next_config.py
+    scripts/qcom_next_conf.py pins
+    scripts/qcom_next_conf.py conf --local-repo /path/to/kernel-topics
 
-Classify a change the way CI will, against the branch you will target:
+Run the offline tests, which build small fixture repositories and exercise the
+real scripts:
 
-    scripts/classify_qcom_next_change.py --base-ref origin/main
-
-Run the tooling's own tests:
-
-    scripts/selftest_qcom_next_config.py
-    scripts/selftest_qcom_next_generate.sh
-    scripts/selftest_qcom_next_ci.py
-
-During the migration from `qcom-next.conf`, most topics do not yet have a
-conventional tag at their pinned SHA. Pass `--allow-untagged` to downgrade those
-errors to warnings. Promotion PRs are expected to run without that flag.
+    scripts/selftest_qcom_next.sh
 
 
-Generating the tree locally
----------------------------
+Conflicts
+---------
 
-CI generates the candidate tree, but the same script reproduces it locally,
-which is what you need when resolving a merge conflict:
-
-    scripts/generate_qcom_next_tree.sh --kernel-dir /path/to/kernel-topics
-
-It writes the following to its `--out-dir`:
-
-    merge.conf        generated flat conf for ci-merge (disposable)
-    merge.log         full ci-merge output
-    tested-set.txt    the inputs that define the tree, with a digest
-    topic-shas.tsv    topic -> pinned SHA and merged commit count
-    conflicts.txt     conflicting topics and paths, if any
-    summary.md        Markdown summary
-
-How the pinning works, since it is not obvious: automerge's `ci-merge` normally
-merges live branch tips. Two of its existing behaviours are used to feed it
-pinned commits instead. It prefers a local ref named `override/<topic>` over
-`<remote>/<branch>`, so creating that ref at the pinned SHA pins the topic. It
-also takes the merge base from `remotes/<baseline>/<branch>`, and there is no
-override hook for the baseline, so the generated conf points every row at the
-local kernel worktree over `file://` after local branches there have been reset
-to the pinned SHAs. That pins the baseline as well, and has the side benefit of
-turning what would be 78 network fetches into local ones.
-
-Consequently the generated tree depends only on the config, never on what a
-topic branch tip happens to be at the time. The self-tests assert exactly that
-by advancing every branch tip and requiring the regenerated tree to be
-unchanged.
-
-To confirm a regenerated tree is the one that was tested:
-
-    scripts/check_tested_tree_matches.sh --expected tested-set.txt \
-                                         --kernel-dir /path/to/kernel-topics
-
-The digest deliberately covers the inputs and not the integration commit:
-`ci-merge` stamps merge commits with the current time, so two runs from
-identical inputs differ in commit id while consuming identical content.
-
-
-What CI does with a config PR
------------------------------
-
-`.github/workflows/qcom-next-pr-ci.yml` runs on every PR that touches the
-configuration:
-
-    validate + classify
-      -> generate the candidate tree from the pinned SHAs
-      -> push it as a candidate ref
-      -> dispatch the kernel, Yocto and Ubuntu gates against that ref
-      -> report everything back on the PR
-
-Candidate refs are named
-
-    qcom-next-candidate/pr-<pr-number>-<short-sha>
-
-and are currently pushed to `qualcomm-linux-stg/kernel`, a staging repository,
-so the flow can be exercised without touching production refs. The target is
-configurable through the `candidate_repo` dispatch input.
-`.github/workflows/prune-qcom-next-candidates.yml` deletes them once their PR is
-closed, or after seven days.
-
-A `metadata-only` or `no-change` PR does not alter the generated tree, so the
-build and test gates are skipped and only validation runs.
-
-The gates are invoked through their existing `workflow_dispatch` interface
-rather than as reusable workflows, because two of them read some inputs through
-`github.event.inputs.*`, which is populated for a dispatch but empty under
-`workflow_call`. Completion is detected by polling the commit status of the
-candidate commit: each gate already reports through
-`.github/actions/workflow_status`, which posts a commit status whose `context`
-is the gate's check name. That is an exact correlation, needs no run-id
-guessing, and keeps working when a gate is retried.
-
-`qcom-next` itself is never written by this workflow. Publication is a separate,
-serialized step.
-
-
-Validation rules
-----------------
-
-    V1  config parses and conforms to schemas/qcom-next.schema.json
-    V2  no duplicate topic names, no duplicate repo/branch pairs
-    V3  every configured SHA exists and its tag resolves to that SHA
-    V4  every configured topic branch still exists on its remote
-    V5  the base and every topic carry a concrete SHA
-    V6  a promotion PR changes only topics; an RC uprev changes only base
-    V7  no promotion publishes while promotion_state is frozen
-    V8  depends_on references real topics, has no cycles, and merge order
-        respects the dependency graph
-
-V1-V5 and V8 are checked by `scripts/validate_qcom_next_config.py`, which
-examines one config in isolation. V6 and V7 are diff-based and are checked by
-`scripts/classify_qcom_next_change.py`, which compares the PR config against the
-target branch.
-
-
-Every entry must be pinned
---------------------------
-
-A topic is added to `qcom-next.yaml` only together with a concrete SHA, and the
-same applies to the baseline. There is no `sha: null`, and tree generation never
-falls back to a branch tip: consuming a tip at merge time would make the
-generated tree depend on when the job ran rather than on this file, which is the
-one property the whole flow exists to provide.
-
-Resolving a branch tip to a concrete SHA is a separate, deliberate act. It
-belongs to the bootstrap helper during migration, and to the maintainer when
-promoting: tag the commit you intend to consume, then record that SHA and tag.
-
-The schema rejects a null SHA, and V5 reports it with the topic named.
-`--allow-untagged` does not excuse it; that flag concerns tags only.
-
-
-Inter-topic dependencies
-------------------------
-
-Declare them with `depends_on` in `qcom-next.yaml`. Two promotion styles are
-supported:
-
-  * Sequential - the dependency is promoted and merged first, then the dependent
-    topic is promoted on top of it. Each change is tested in isolation, so
-    regressions are attributed precisely.
-
-  * Atomic - both topic SHAs move in the same PR and are tested together. Useful
-    for tightly coupled changes, at the cost of less precise attribution.
-
-A multi-topic PR is accepted only when `depends_on` connects the promoted
-topics. Otherwise it is rejected as `invalid-mixed-change`; split it into
-sequential PRs, declare the dependency, or ask the integration owner for an
-override.
-
-
-Change classifications
-----------------------
-
-CI labels every config change as exactly one of:
-
-    rc-uprev                only base fields changed
-    topic-promotion         exactly one topic's sha/tag changed
-    atomic-topic-promotion  several dependency-linked topic SHAs moved together
-    metadata-only           depends_on, comments, or other unpublished metadata
-    rerere-only             only the rerere cache reference changed
-    no-change               config is identical to the base
-    invalid-mixed-change    rejected; see V6
-
-`metadata-only` changes do not alter the generated tree and therefore need
-validation only. Everything else requires the full gates.
+Conflicts are replayed from the rerere cache named in `rerere_cache`. If a
+merge hits a conflict with no recorded resolution, the run fails and names the
+topic. Resolve it locally with the same config and cache revision, push the
+updated rerere cache, and re-run.
 
 
 Migration helper
 ----------------
 
-`scripts/bootstrap_qcom_next_yaml.py` regenerated `qcom-next.yaml` from the
-legacy `qcom-next.conf` during the initial migration, capturing each branch tip
-as the first pinned SHA. It is kept in-tree so that migration is reproducible
-and auditable; it is not part of the normal promotion flow.
+`scripts/bootstrap_qcom_next_yaml.py` generated `qcom-next.yaml` from the
+legacy `qcom-next.conf`, taking the SHAs from the `topic_SHA1` table published
+alongside a generated qcom-next. It is kept in-tree so the migration is
+reproducible; it is not part of the normal promotion flow.
 
 
 Other files
