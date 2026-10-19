@@ -2,11 +2,11 @@ name: Sync workspace
 
 inputs:
   base_branch:
-    description: Base branch
+    description: Branch or ref to check out
     required: true
     default: qcom-next-staging
   pr_number:
-    description: PR number
+    description: PR number to merge. Leave empty or 0 to check out base_branch as-is.
     required: false
   GH_TOKEN:
     description: Access Token
@@ -30,13 +30,34 @@ runs:
         rm -rf ${{ github.workspace }}/*
         echo "Workspace cleaned successfully!"
 
+    - name: Classify sync mode
+      id: mode
+      shell: bash
+      env:
+        IN_REPO: ${{ inputs.repo }}
+        IN_PR: ${{ inputs.pr_number }}
+      run: |
+        set -euo pipefail
+
+        if [ "$IN_REPO" = "qualcomm-linux/kernel-topics" ]; then
+          mode=topics
+        elif [ -z "$IN_PR" ] || [ "$IN_PR" = "0" ]; then
+          mode=ref
+        else
+          mode=pr
+        fi
+
+        echo "mode=$mode" >> "$GITHUB_OUTPUT"
+        echo "Sync mode: $mode"
+
     - name: Checkout PR branch
-      if: inputs.repo == 'qualcomm-linux/kernel'
+      if: steps.mode.outputs.mode != 'topics'
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        repository: qualcomm-linux/kernel
+        repository: ${{ inputs.repo }}
         ref: ${{ inputs.base_branch }}
+        token: ${{ inputs.GH_TOKEN }}
 
     - name: Configure git
       shell: bash
@@ -45,7 +66,7 @@ runs:
         git config --global user.email "github-actions@github.com"
 
     - name: Sync with latest changes
-      if: inputs.repo == 'qualcomm-linux/kernel'
+      if: steps.mode.outputs.mode == 'pr'
       shell: bash
       run: |
         set -e
@@ -53,8 +74,17 @@ runs:
         git fetch origin ${{ inputs.base_branch }}
         git merge --no-ff origin/${{ inputs.base_branch }}
 
+    - name: Record the checked out commit
+      if: steps.mode.outputs.mode == 'ref'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Testing ${{ inputs.repo }} at ${{ inputs.base_branch }}"
+        echo "commit: $(git rev-parse HEAD)"
+        git --no-pager log -1 --format='%H %s'
+
     - name: Clone repositories
-      if: inputs.repo == 'qualcomm-linux/kernel-topics'
+      if: steps.mode.outputs.mode == 'topics'
       shell: bash
       run: |
         git clone https://github.com/qualcomm-linux/kernel.git
@@ -160,11 +190,11 @@ runs:
         git commit -m "Merged PR ${{inputs.pr_number}}"
 
     - name: Fetch PR
-      if: inputs.repo == 'qualcomm-linux/kernel'
+      if: steps.mode.outputs.mode == 'pr'
       shell: bash
       run: |
         git checkout ${{ inputs.base_branch }}
-        git fetch https://github.com/qualcomm-linux/kernel.git pull/${{inputs.pr_number}}/head:pr-${{inputs.pr_number}}
+        git fetch https://github.com/${{ inputs.repo }}.git pull/${{inputs.pr_number}}/head:pr-${{inputs.pr_number}}
         git merge pr-${{ inputs.pr_number }} --no-commit || echo "Merge already applied or fast-forwarded"
         if ! git diff --cached --quiet; then
           git commit -m "Merged PR #${{ inputs.pr_number }}"
@@ -175,9 +205,12 @@ runs:
     - name: Set workspace path
       id: set-workspace
       shell: bash
+      env:
+        SYNC_MODE: ${{ steps.mode.outputs.mode }}
+        WORKSPACE: ${{ github.workspace }}
       run: |
-        if [[ "${{ inputs.repo }}" == "qualcomm-linux/kernel" ]]; then
-          echo "workspace=${{ github.workspace }}" >> "$GITHUB_OUTPUT"
+        if [ "$SYNC_MODE" = "topics" ]; then
+          echo "workspace=${WORKSPACE}/kernel" >> "$GITHUB_OUTPUT"
         else
-          echo "workspace=${{ github.workspace }}/kernel" >> "$GITHUB_OUTPUT"
+          echo "workspace=${WORKSPACE}" >> "$GITHUB_OUTPUT"
         fi

@@ -37,7 +37,7 @@ jobs:
 
       - name: Sync codebase
         id: sync
-        uses: qualcomm-linux/kernel-config/.github/actions/sync@main
+        uses: ./.github/actions/sync
         with:
           base_branch: ${{ inputs.branch }}
           pr_number: ${{ inputs.pr_number}}

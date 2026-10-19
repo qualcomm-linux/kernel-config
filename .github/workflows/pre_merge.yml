@@ -65,7 +65,7 @@ jobs:
 
   build:
     needs: [loading, init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build.yml@main
+    uses: ./.github/workflows/build.yml
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
@@ -77,7 +77,7 @@ jobs:
 
   build_rt:
     needs: [loading, init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build_rt.yml@main
+    uses: ./.github/workflows/build_rt.yml
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
