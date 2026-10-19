@@ -68,7 +68,7 @@ jobs:
 
   loading:
     needs: [init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
+    uses: ./.github/workflows/loading.yml
     secrets: inherit
     with:
       branch: ${{ inputs.matrix_branch != '' && inputs.matrix_branch || inputs.ref }}
