@@ -1,18 +1,40 @@
 name: pre_merge
-run-name: "${{ format('premerge: {0} - PR #{1}', inputs.repo, inputs.pr) }}"
+run-name: "${{ inputs.pr != '' && inputs.pr != '0' && format('premerge: {0} - PR #{1}', inputs.repo, inputs.pr) || format('premerge: {0} @ {1}', inputs.repo, inputs.ref) }}"
 on:
+  workflow_call:
+    inputs:
+      pr:
+        description: Pull request number. Leave empty or 0 to build ref as-is.
+        type: string
+        required: false
+        default: "0"
+      sha:
+        description: Commit SHA for status/check reporting. Optional for branch-only builds.
+        type: string
+        required: false
+        default: ""
+      ref:
+        description: Target branch/ref. With no PR, this ref is checked out and built as-is.
+        type: string
+        required: true
+      repo:
+        description: Target repository
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       pr:
-        description: Pull request number
+        description: Pull request number. Leave empty or 0 to build ref as-is.
         type: string
-        required: true
+        required: false
+        default: "0"
       sha:
-        description: Head sha of the PR
+        description: Commit SHA for status/check reporting. Optional for branch-only builds.
         type: string
-        required: true
+        required: false
+        default: ""
       ref:
-        description: Target branch
+        description: Target branch/ref. With no PR, this ref is checked out and built as-is.
         type: string
         required: true
       repo:
@@ -25,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Initial workflow status
+        if: inputs.sha != ''
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ inputs.sha }}
@@ -64,6 +87,7 @@ jobs:
       variant: RT
 
   check_run:
+    if: inputs.sha != ''
     runs-on: ubuntu-latest
     needs: [init-status, loading, build]
     steps:
@@ -77,7 +101,7 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    if: inputs.repo == 'qualcomm-linux/kernel'
+    if: inputs.repo == 'qualcomm-linux/kernel' && inputs.sha != ''
     needs: [init-status, loading, build]
     uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
     secrets: inherit
@@ -94,7 +118,7 @@ jobs:
   comment:
     needs: [test]
     uses: qualcomm-linux/kernel-config/.github/workflows/comment.yml@main
-    if: always() && needs.test.result != 'skipped' 
+    if: always() && inputs.pr != '' && inputs.pr != '0' && needs.test.result != 'skipped'
     secrets: inherit
     with:
       pr_number: ${{ inputs.pr }}
@@ -107,6 +131,7 @@ jobs:
     if: always()
     steps:
       - name: Final workflow status
+        if: inputs.sha != ''
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ inputs.sha }}

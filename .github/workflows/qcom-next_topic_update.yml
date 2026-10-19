@@ -1,0 +1,152 @@
+---
+# CI for a qcom-next.yaml change.
+#
+#   PR edits qcom-next.yaml
+#     -> build the tree the file describes
+#     -> push it as qcom-next-candidate-<pr>
+#     -> run pre_merge and pre_merge_yocto against that branch
+#     -> integrator reviews and merges; qcom-next-publish.yml takes it from there
+#
+# Only qcom-next.yaml triggers this. Any other kernel-config PR is untouched.
+#
+# The candidate branch is named after the PR, so a new push replaces it instead
+# of leaving a trail of refs behind.
+name: qcom-next
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - qcom-next.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  # One candidate per PR. A new push supersedes the running CI/CD.
+  group: qcom-next-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Candidates live in the kernel repo because that is where the CI/CD
+  # workflows can run: pre_merge.yml only runs its test job for
+  # qualcomm-linux/kernel.
+  KERNEL_REPO: qualcomm-linux/kernel
+  TOPICS_REPO: qualcomm-linux/kernel-topics
+  AUTOMERGE_REPO: sgaud-quic/automerge
+
+jobs:
+  candidate:
+    name: Build and push the candidate
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    outputs:
+      ref: ${{ steps.push.outputs.ref }}
+      sha: ${{ steps.push.outputs.sha }}
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+        with:
+          path: kernel-config
+
+      - name: Checkout automerge
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.AUTOMERGE_REPO }}
+          path: automerge
+          ref: sha_config_yaml
+          token: ${{ secrets.SPAT || github.token }}
+
+      - name: Checkout kernel-topics
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TOPICS_REPO }}
+          path: kernel-topics
+          # Full history and tags: a pinned sha is often behind the branch tip,
+          # and after a rebase it is only reachable through its tag.
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.SPAT || github.token }}
+
+      - name: Run Automerge
+        run:  |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/kernel-topics
+          test -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf
+          echo $GITHUB_WORKSPACE/kernel-config/qcom-next.yaml
+          $GITHUB_WORKSPACE/automerge/ci-merge --yaml-config $GITHUB_WORKSPACE/kernel-config/qcom-next.yaml -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n -p | tee $GITHUB_WORKSPACE/merge.log
+
+      - name: Parse and Add logs
+        run: |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/kernel-topics
+          mkdir qcom-next
+          $GITHUB_WORKSPACE/automerge/log-parser.sh $GITHUB_WORKSPACE/merge.log
+          cp topic_SHA1 qcom-next
+          cp ../merge.log qcom-next/
+          sed -i 's/\r$//' qcom-next/merge.log
+          sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
+          sed -i -E 's#https://[^/@[:space:]]+@github\.com/#https://***@github.com/#g' qcom-next/merge.log
+          git config user.email "sgaud@qti.qualcomm.com"
+          git config user.name  "Salendarsingh Gaud"
+          git add qcom-next/merge.log qcom-next/topic_SHA1
+          git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s
+
+      - name: Push the candidate
+        id: push
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.SPAT }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_PUSH_TOKEN:-}" ]; then
+            echo "::error title=qcom-next::SPAT is needed to push the candidate to ${KERNEL_REPO}"
+            exit 1
+          fi
+
+          ref="qcom-next-candidate-${PR}"
+          sha="$(cat out/head.txt)"
+
+          cd kernel-topics
+          git remote remove candidate 2>/dev/null || true
+          git remote add candidate \
+              "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${KERNEL_REPO}.git"
+          git push --force candidate "refs/heads/qcom-next:refs/heads/${ref}"
+          git remote remove candidate
+
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "pushed ${KERNEL_REPO} ${ref} @ ${sha:0:12}"
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          if [ -f out/summary.md ]; then
+            cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The tree was not built; see the job log." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qcom-next-candidate
+          path: |
+            out/merge.log
+            out/qcom-next.conf
+            out/topics.tsv
+            out/summary.md
+          if-no-files-found: warn
+          retention-days: 14
+
+  premerge:
+    name: pre_merge
+    needs: candidate
+    uses: ./.github/workflows/pre_merge.yml
+    secrets: inherit
+    with:
+      repo: qualcomm-linux/kernel
+      ref: ${{ needs.candidate.outputs.ref }}
+      pr: "0"

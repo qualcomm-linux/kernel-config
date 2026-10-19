@@ -7,11 +7,12 @@ on:
         type: string
         required: true
       pr_number:
-        description: PR number
+        description: PR number to merge. Leave empty or 0 to build branch as-is.
         type: string
         required: false
+        default: "0"
       branch:
-        description: Branch name
+        description: Branch/ref to build. With no PR, this ref is checked out as-is.
         type: string
         required: false
       repo:
