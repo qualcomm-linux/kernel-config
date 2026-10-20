@@ -1,30 +1,39 @@
 ---
-# CI for a qcom-next.yaml change.
+# Reusable qcom-next topic update pipeline.
 #
-#   PR edits qcom-next.yaml
-#     -> build the tree the file describes
-#     -> push it as qcom-next-candidate-<pr>
-#     -> run pre_merge and pre_merge_yocto against that branch
-#     -> integrator reviews and merges; qcom-next-publish.yml takes it from there
-#
-# Only qcom-next.yaml triggers this. Any other kernel-config PR is untouched.
-#
-# The candidate branch is named after the PR, so a new push replaces it instead
-# of leaving a trail of refs behind.
-name: qcom-next
+# Wrappers call this for automatic PR validation and manual multi-PR runs.
+name: _qcom-next_topic_update
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - qcom-next.yaml
+  workflow_call:
+    inputs:
+      pr_number:
+        description: kernel-config PR number containing qcom-next.yaml changes
+        type: string
+        required: false
+        default: ""
+      pr_numbers:
+        description: JSON array of kernel-config PR numbers to merge and validate in one batch
+        type: string
+        required: false
+        default: ""
+      kernel_config_ref:
+        description: Optional kernel-config ref/SHA to check out. Defaults to refs/pull/<pr_number>/head.
+        type: string
+        required: false
+        default: ""
+      kernel_config_base_ref:
+        description: kernel-config base ref for multi-PR batch mode
+        type: string
+        required: false
+        default: main
 
 permissions:
   contents: read
 
 concurrency:
   # One candidate per PR. A new push supersedes the running CI/CD.
-  group: qcom-next-${{ github.event.pull_request.number }}
+  group: qcom-next-${{ inputs.pr_number != '' && inputs.pr_number || format('batch-{0}', github.run_id) }}
   cancel-in-progress: true
 
 env:
@@ -45,10 +54,37 @@ jobs:
       ref: ${{ steps.push.outputs.ref }}
       sha: ${{ steps.push.outputs.sha }}
     steps:
-      - name: Checkout kernel-config
+      - name: Checkout kernel-config PR
+        if: inputs.pr_numbers == ''
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.kernel_config_ref != '' && inputs.kernel_config_ref || format('refs/pull/{0}/head', inputs.pr_number) }}
           path: kernel-config
+
+      - name: Checkout kernel-config base
+        if: inputs.pr_numbers != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.kernel_config_base_ref }}
+          path: kernel-config
+          fetch-depth: 0
+
+      - name: Merge kernel-config PRs
+        if: inputs.pr_numbers != ''
+        env:
+          PR_NUMBERS: ${{ inputs.pr_numbers }}
+        run: |
+          set -euo pipefail
+          cd kernel-config
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          mapfile -t prs < <(jq -r '.[]' <<< "$PR_NUMBERS")
+          for pr in "${prs[@]}"; do
+            echo "Merging kernel-config PR #$pr"
+            git fetch origin "pull/${pr}/head:pr-${pr}"
+            git merge --no-ff --no-edit "pr-${pr}"
+          done
 
       - name: Checkout automerge
         uses: actions/checkout@v4
@@ -97,7 +133,7 @@ jobs:
         id: push
         env:
           GH_PUSH_TOKEN: ${{ secrets.SPAT }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ inputs.pr_number }}
         run: |
           set -euo pipefail
           if [ -z "${GH_PUSH_TOKEN:-}" ]; then
@@ -105,7 +141,11 @@ jobs:
             exit 1
           fi
 
-          ref="qcom-next-candidate-${PR}"
+          if [ -n "$PR" ]; then
+            ref="qcom-next-candidate-${PR}"
+          else
+            ref="qcom-next-candidate-batch-${{ github.run_id }}"
+          fi
 
           cd kernel-topics
           sha="$(git rev-parse refs/heads/qcom-next)"
