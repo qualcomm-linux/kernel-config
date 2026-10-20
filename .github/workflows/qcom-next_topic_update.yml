@@ -17,24 +17,15 @@ on:
         type: string
         required: false
         default: ""
-      kernel_config_ref:
-        description: Optional kernel-config ref/SHA to check out. Defaults to refs/pull/<pr_number>/head.
-        type: string
-        required: false
-        default: ""
-      kernel_config_base_ref:
-        description: kernel-config base ref for multi-PR batch mode
-        type: string
-        required: false
-        default: main
 
 permissions:
   contents: read
 
 concurrency:
-  # One candidate per PR. A new push supersedes the running CI/CD.
-  group: qcom-next-${{ inputs.pr_number != '' && inputs.pr_number || format('batch-{0}', github.run_id) }}
-  cancel-in-progress: true
+  # qcom-next candidate generation updates shared refs/cache state, so serialize
+  # all automatic and manual invocations instead of canceling in-flight runs.
+  group: qcom-next-topic-update
+  cancel-in-progress: false
 
 env:
   # Candidates live in the kernel repo because that is where the CI/CD
@@ -54,24 +45,15 @@ jobs:
       ref: ${{ steps.push.outputs.ref }}
       sha: ${{ steps.push.outputs.sha }}
     steps:
-      - name: Checkout kernel-config PR
-        if: inputs.pr_numbers == ''
+      - name: Checkout kernel-config
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.kernel_config_ref != '' && inputs.kernel_config_ref || format('refs/pull/{0}/head', inputs.pr_number) }}
-          path: kernel-config
-
-      - name: Checkout kernel-config base
-        if: inputs.pr_numbers != ''
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.kernel_config_base_ref }}
           path: kernel-config
           fetch-depth: 0
 
       - name: Merge kernel-config PRs
-        if: inputs.pr_numbers != ''
         env:
+          PR: ${{ inputs.pr_number }}
           PR_NUMBERS: ${{ inputs.pr_numbers }}
         run: |
           set -euo pipefail
@@ -79,7 +61,12 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          mapfile -t prs < <(jq -r '.[]' <<< "$PR_NUMBERS")
+          if [ -n "$PR" ]; then
+            prs=("$PR")
+          else
+            mapfile -t prs < <(jq -r '.[]' <<< "$PR_NUMBERS")
+          fi
+
           for pr in "${prs[@]}"; do
             echo "Merging kernel-config PR #$pr"
             git fetch origin "pull/${pr}/head:pr-${pr}"

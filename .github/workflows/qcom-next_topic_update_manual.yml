@@ -8,11 +8,6 @@ on:
         description: PR numbers to validate. Accepts JSON array, comma, whitespace, or newline separated values.
         type: string
         required: true
-      base_ref:
-        description: kernel-config base ref to merge PRs onto
-        type: string
-        required: false
-        default: main
 
 permissions:
   contents: read
@@ -61,4 +56,3 @@ jobs:
     secrets: inherit
     with:
       pr_numbers: ${{ needs.parse-prs.outputs.prs }}
-      kernel_config_base_ref: ${{ inputs.base_ref }}
