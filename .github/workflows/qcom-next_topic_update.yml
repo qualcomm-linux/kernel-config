@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   # qcom-next candidate generation updates shared refs/cache state, so serialize
@@ -34,6 +35,7 @@ env:
   KERNEL_REPO: qualcomm-linux/kernel
   TOPICS_REPO: qualcomm-linux/kernel-topics
   AUTOMERGE_REPO: sgaud-quic/automerge
+  S3_BUCKET: qli-prd-kernel-gh-artifacts
 
 jobs:
   candidate:
@@ -41,6 +43,10 @@ jobs:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
     outputs:
       ref: ${{ steps.push.outputs.ref }}
       sha: ${{ steps.push.outputs.sha }}
@@ -52,6 +58,7 @@ jobs:
           fetch-depth: 0
 
       - name: Merge kernel-config PRs
+        id: merge_prs
         env:
           PR: ${{ inputs.pr_number }}
           PR_NUMBERS: ${{ inputs.pr_numbers }}
@@ -60,6 +67,7 @@ jobs:
           cd kernel-config
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          base_sha="$(git rev-parse HEAD)"
 
           if [ -n "$PR" ]; then
             prs=("$PR")
@@ -70,8 +78,21 @@ jobs:
           for pr in "${prs[@]}"; do
             echo "Merging kernel-config PR #$pr"
             git fetch origin "pull/${pr}/head:pr-${pr}"
+            head_sha="$(git rev-parse "pr-${pr}")"
             git merge --no-ff --no-edit "pr-${pr}"
+            merge_sha="$(git rev-parse HEAD)"
+            jq -n \
+              --arg number "$pr" \
+              --arg head_sha "$head_sha" \
+              --arg merge_sha "$merge_sha" \
+              '{number: ($number | tonumber), head_sha: $head_sha, merge_sha: $merge_sha}' >> ../prs.jsonl
           done
+
+          merged_sha="$(git rev-parse HEAD)"
+          prs_json="$(jq -s -c . ../prs.jsonl)"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "merged_sha=$merged_sha" >> "$GITHUB_OUTPUT"
+          echo "prs_json=$prs_json" >> "$GITHUB_OUTPUT"
 
       - name: Checkout automerge
         uses: actions/checkout@v4
@@ -146,6 +167,66 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "pushed ${KERNEL_REPO} ${ref} @ ${sha:0:12}"
 
+      - name: Store candidate metadata
+        id: metadata
+        env:
+          PRS_JSON: ${{ steps.merge_prs.outputs.prs_json }}
+          KERNEL_CONFIG_BASE_SHA: ${{ steps.merge_prs.outputs.base_sha }}
+          KERNEL_CONFIG_MERGED_SHA: ${{ steps.merge_prs.outputs.merged_sha }}
+          CANDIDATE_REF: ${{ steps.push.outputs.ref }}
+          CANDIDATE_SHA: ${{ steps.push.outputs.sha }}
+        run: |
+          set -euo pipefail
+          metadata_path="${{ runner.temp }}/qcom-next-metadata.json"
+          s3_key="qcom-next/ci/${{ github.run_id }}/metadata.json"
+
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg run_attempt "${{ github.run_attempt }}" \
+            --arg kernel_config_base_sha "$KERNEL_CONFIG_BASE_SHA" \
+            --arg kernel_config_merged_sha "$KERNEL_CONFIG_MERGED_SHA" \
+            --arg candidate_repo "$KERNEL_REPO" \
+            --arg candidate_ref "$CANDIDATE_REF" \
+            --arg candidate_sha "$CANDIDATE_SHA" \
+            --arg s3_bucket "$S3_BUCKET" \
+            --arg s3_key "$s3_key" \
+            --argjson prs "$PRS_JSON" \
+            '{schema_version: 1, run_id: $run_id, run_attempt: $run_attempt, kernel_config_base_sha: $kernel_config_base_sha, kernel_config_merged_sha: $kernel_config_merged_sha, prs: $prs, candidate: {repo: $candidate_repo, ref: $candidate_ref, sha: $candidate_sha}, metadata: {s3_bucket: $s3_bucket, s3_key: $s3_key}}' \
+            > "$metadata_path"
+
+          aws s3 cp "$metadata_path" "s3://${S3_BUCKET}/${s3_key}"
+          echo "s3_key=$s3_key" >> "$GITHUB_OUTPUT"
+
+      - name: Comment CI metadata run id on PRs
+        uses: actions/github-script@v7
+        env:
+          PRS_JSON: ${{ steps.merge_prs.outputs.prs_json }}
+          CANDIDATE_REF: ${{ steps.push.outputs.ref }}
+          CANDIDATE_SHA: ${{ steps.push.outputs.sha }}
+          S3_KEY: ${{ steps.metadata.outputs.s3_key }}
+        with:
+          script: |
+            const prs = JSON.parse(process.env.PRS_JSON);
+            const body = [
+              '<!-- qcom-next-ci-metadata -->',
+              'qcom-next CI metadata is ready.',
+              '',
+              `Run ID: ${context.runId}`,
+              `Candidate: ${process.env.CANDIDATE_REF} @ ${process.env.CANDIDATE_SHA}`,
+              `S3 key: ${process.env.S3_KEY}`,
+              '',
+              'Use this Run ID in the qcom-next publish manual workflow after CI is accepted.'
+            ].join('\n');
+
+            for (const pr of prs) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body,
+              });
+            }
+
       - name: Summary
         if: ${{ always() }}
         run: |
@@ -154,6 +235,7 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Generated branch: ${{ steps.push.outputs.ref }}" >> "$GITHUB_STEP_SUMMARY"
             echo "Generated SHA: ${{ steps.push.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Metadata S3 key: ${{ steps.metadata.outputs.s3_key }}" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "The tree was not built; see the job log." >> "$GITHUB_STEP_SUMMARY"
           fi
