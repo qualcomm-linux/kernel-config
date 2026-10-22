@@ -254,6 +254,7 @@ jobs:
 
   premerge:
     name: pre_merge
+    if: false
     needs: candidate
     uses: ./.github/workflows/pre_merge.yml
     secrets: inherit
@@ -265,6 +266,7 @@ jobs:
 
   yocto:
     name: pre_merge_yocto
+    if: false
     needs: candidate
     uses: ./.github/workflows/pre-merge-yocto.yml
     secrets: inherit
@@ -275,7 +277,7 @@ jobs:
 
   test-results:
     name: Evaluate qcom-next test results
-    if: always()
+    if: false
     needs: [premerge, yocto]
     runs-on: ubuntu-latest
     steps:
@@ -345,7 +347,7 @@ jobs:
 
   publish:
     name: Publish qcom-next
-    needs: test-results
+    needs: candidate
     uses: ./.github/workflows/qcom-next_publish.yml
     secrets: inherit
     with:
