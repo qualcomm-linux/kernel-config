@@ -8,8 +8,9 @@ on:
       - qcom-next.yaml
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
 
 jobs:
   qcom-next:
