@@ -135,5 +135,23 @@ jobs:
           mapfile -t prs < <(jq -r '.[].number' <<< "$PRS_JSON")
           for pr in "${prs[@]}"; do
             echo "Merging kernel-config PR #$pr"
-            gh pr merge "$pr" --merge --subject "Merge qcom-next PR #$pr after publish" --body "Published qcom-next from CI run ${{ inputs.run_id }}."
+            payload="$(jq -n \
+              --arg title "Merge qcom-next PR #$pr after publish" \
+              --arg message "Published qcom-next from CI run ${{ inputs.run_id }}." \
+              '{commit_title: $title, commit_message: $message, merge_method: "merge"}')"
+            response="$(curl -sS -w '\n%{http_code}' -L \
+              -X PUT \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${pr}/merge" \
+              -d "$payload")"
+            http_code="$(printf '%s' "$response" | tail -n1)"
+            body="$(printf '%s' "$response" | sed '$d')"
+            if [ "$http_code" != "200" ]; then
+              echo "Failed to merge PR #$pr (HTTP $http_code)" >&2
+              printf '%s\n' "$body" >&2
+              exit 1
+            fi
+            printf '%s\n' "$body" | jq .
           done
