@@ -16,7 +16,8 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: qcom-next-publish
@@ -121,3 +122,18 @@ jobs:
           echo "Source CI run: ${{ inputs.run_id }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Published: ${PUBLISH_REPO}:qcom-next" >> "$GITHUB_STEP_SUMMARY"
           echo "SHA: ${{ steps.publish.outputs.published_sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Merge recorded kernel-config PRs
+        if: steps.publish.outputs.published_sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          PRS_JSON: ${{ steps.metadata.outputs.prs_json }}
+        run: |
+          set -euo pipefail
+          cd kernel-config
+
+          mapfile -t prs < <(jq -r '.[].number' <<< "$PRS_JSON")
+          for pr in "${prs[@]}"; do
+            echo "Merging kernel-config PR #$pr"
+            gh pr merge "$pr" --merge --subject "Merge qcom-next PR #$pr after publish" --body "Published qcom-next from CI run ${{ inputs.run_id }}."
+          done

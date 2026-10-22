@@ -19,8 +19,9 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
 
 concurrency:
   # qcom-next candidate generation updates shared refs/cache state, so serialize
