@@ -258,7 +258,7 @@ jobs:
     uses: ./.github/workflows/pre_merge.yml
     secrets: inherit
     with:
-      repo: ${{ env.KERNEL_REPO }}
+      repo: qualcomm-linux-stg/kernel
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
       pr: "0"
@@ -269,7 +269,7 @@ jobs:
     uses: ./.github/workflows/pre-merge-yocto.yml
     secrets: inherit
     with:
-      repo: ${{ env.KERNEL_REPO }}
+      repo: qualcomm-linux-stg/kernel
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
 
