@@ -9,10 +9,9 @@ on:
         required: false
         default: "0"
       sha:
-        description: Commit SHA for status/check reporting. Optional for branch-only builds.
+        description: Commit SHA for status/check reporting.
         type: string
-        required: false
-        default: ""
+        required: true
       ref:
         description: Target branch/ref. With no PR, this ref is checked out and built as-is.
         type: string
@@ -34,10 +33,9 @@ on:
         required: false
         default: "0"
       sha:
-        description: Commit SHA for status/check reporting. Optional for branch-only builds.
+        description: Commit SHA for status/check reporting.
         type: string
-        required: false
-        default: ""
+        required: true
       ref:
         description: Target branch/ref. With no PR, this ref is checked out and built as-is.
         type: string
@@ -57,7 +55,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Initial workflow status
-        if: inputs.sha != ''
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ inputs.sha }}
@@ -97,7 +94,6 @@ jobs:
       variant: RT
 
   check_run:
-    if: inputs.sha != ''
     runs-on: ubuntu-latest
     needs: [init-status, loading, build]
     steps:
@@ -111,7 +107,7 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    if: inputs.repo == 'qualcomm-linux/kernel' && inputs.sha != ''
+    if: inputs.repo == 'qualcomm-linux/kernel'
     needs: [init-status, loading, build]
     uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
     secrets: inherit
@@ -141,7 +137,6 @@ jobs:
     if: always()
     steps:
       - name: Final workflow status
-        if: inputs.sha != ''
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ inputs.sha }}
