@@ -1,0 +1,123 @@
+---
+name: _qcom-next_publish
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: qcom-next CI run id containing the accepted candidate metadata
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: qcom-next CI run id containing the accepted candidate metadata
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qcom-next-publish
+  cancel-in-progress: false
+
+env:
+  S3_BUCKET: qli-prd-kernel-gh-artifacts
+  PUBLISH_REPO: qualcomm-linux-stg/kernel
+
+jobs:
+  publish:
+    name: Publish qcom-next to staging
+    runs-on:
+      group: GHA-Kernel-SelfHosted-RG
+      labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Download CI metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+          s3_key="qcom-next/ci/${{ inputs.run_id }}/metadata.json"
+          metadata_path="${{ runner.temp }}/qcom-next-metadata.json"
+          aws s3 cp "s3://${S3_BUCKET}/${s3_key}" "$metadata_path"
+
+          candidate_repo="$(jq -r '.candidate.repo' "$metadata_path")"
+          candidate_ref="$(jq -r '.candidate.ref' "$metadata_path")"
+          candidate_sha="$(jq -r '.candidate.sha' "$metadata_path")"
+          prs_json="$(jq -c '.prs' "$metadata_path")"
+
+          if [ -z "$candidate_repo" ] || [ "$candidate_repo" = "null" ] || \
+             [ -z "$candidate_ref" ] || [ "$candidate_ref" = "null" ] || \
+             [ -z "$candidate_sha" ] || [ "$candidate_sha" = "null" ]; then
+            echo "ERROR: metadata is missing candidate repo/ref/sha" >&2
+            jq . "$metadata_path"
+            exit 1
+          fi
+
+          echo "metadata_path=$metadata_path" >> "$GITHUB_OUTPUT"
+          echo "candidate_repo=$candidate_repo" >> "$GITHUB_OUTPUT"
+          echo "candidate_ref=$candidate_ref" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "prs_json=$prs_json" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+        with:
+          path: kernel-config
+          fetch-depth: 0
+
+      - name: Verify recorded PRs still merge
+        env:
+          PRS_JSON: ${{ steps.metadata.outputs.prs_json }}
+        run: |
+          set -euo pipefail
+          cd kernel-config
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          mapfile -t prs < <(jq -r '.[].number' <<< "$PRS_JSON")
+          for pr in "${prs[@]}"; do
+            echo "Verifying kernel-config PR #$pr merges"
+            git fetch origin "pull/${pr}/head:pr-${pr}"
+            git merge --no-ff --no-edit "pr-${pr}"
+          done
+
+      - name: Publish recorded candidate SHA
+        id: publish
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.SPAT }}
+          CANDIDATE_REPO: ${{ steps.metadata.outputs.candidate_repo }}
+          CANDIDATE_REF: ${{ steps.metadata.outputs.candidate_ref }}
+          CANDIDATE_SHA: ${{ steps.metadata.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_PUSH_TOKEN:-}" ]; then
+            echo "::error title=qcom-next publish::SPAT is needed to publish qcom-next to ${PUBLISH_REPO}"
+            exit 1
+          fi
+
+          work="${{ runner.temp }}/qcom-next-publish"
+          rm -rf "$work"
+          mkdir -p "$work"
+          cd "$work"
+          git init
+          git remote add candidate "https://github.com/${CANDIDATE_REPO}.git"
+          git fetch candidate "refs/heads/${CANDIDATE_REF}:refs/remotes/candidate/${CANDIDATE_REF}"
+          git rev-parse --quiet --verify "${CANDIDATE_SHA}^{commit}" >/dev/null
+
+          git remote add publish "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${PUBLISH_REPO}.git"
+          git push --force publish "${CANDIDATE_SHA}:refs/heads/qcom-next"
+          echo "published_sha=${CANDIDATE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### qcom-next publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source CI run: ${{ inputs.run_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Published: ${PUBLISH_REPO}:qcom-next" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA: ${{ steps.publish.outputs.published_sha }}" >> "$GITHUB_STEP_SUMMARY"

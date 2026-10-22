@@ -215,7 +215,7 @@ jobs:
               `Candidate: ${process.env.CANDIDATE_REF} @ ${process.env.CANDIDATE_SHA}`,
               `S3 key: ${process.env.S3_KEY}`,
               '',
-              'Use this Run ID in the qcom-next publish manual workflow after CI is accepted.'
+              'qcom-next is published automatically if all CI tests pass. Use this Run ID with the qcom-next publish workflow for a manual republish if needed.'
             ].join('\n');
 
             for (const pr of prs) {
@@ -342,3 +342,11 @@ jobs:
           fi
 
           echo "qcom-next result: passed"
+
+  publish:
+    name: Publish qcom-next
+    needs: test-results
+    uses: ./.github/workflows/qcom-next_publish.yml
+    secrets: inherit
+    with:
+      run_id: ${{ github.run_id }}
