@@ -29,10 +29,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Candidates live in the kernel repo because that is where the CI/CD
-  # workflows can run: pre_merge.yml only runs its test job for
-  # qualcomm-linux/kernel.
-  KERNEL_REPO: qualcomm-linux/kernel
+  # Candidates live in the staging kernel repo for validation before publish.
+  KERNEL_REPO: qualcomm-linux-stg/kernel
   TOPICS_REPO: qualcomm-linux/kernel-topics
   AUTOMERGE_REPO: sgaud-quic/automerge
   S3_BUCKET: qli-prd-kernel-gh-artifacts
@@ -260,7 +258,7 @@ jobs:
     uses: ./.github/workflows/pre_merge.yml
     secrets: inherit
     with:
-      repo: qualcomm-linux/kernel
+      repo: ${{ env.KERNEL_REPO }}
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
       pr: "0"
@@ -271,5 +269,76 @@ jobs:
     uses: ./.github/workflows/pre-merge-yocto.yml
     secrets: inherit
     with:
+      repo: ${{ env.KERNEL_REPO }}
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
+
+  test-results:
+    name: Evaluate qcom-next test results
+    if: always()
+    needs: [premerge, yocto]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download LAVA result artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: Tests-*
+          path: lava-results
+          merge-multiple: true
+
+      - name: Check test results
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          files=(lava-results/*.json)
+          failed=0
+
+          {
+            echo "### qcom-next test result"
+            echo ""
+            echo "| Gate | Workflow result |"
+            echo "| --- | --- |"
+            echo "| pre_merge | ${{ needs.premerge.result }} |"
+            echo "| pre_merge_yocto | ${{ needs.yocto.result }} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ needs.premerge.result }}" != "success" ] || [ "${{ needs.yocto.result }}" != "success" ]; then
+            failed=1
+          fi
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No LAVA result JSON artifacts were found." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=qcom-next::No LAVA result JSON artifacts were found"
+            exit 1
+          fi
+
+          {
+            echo "| Target | Pass | Non-pass | Total |"
+            echo "| --- | :---: | :---: | :---: |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for file in "${files[@]}"; do
+            target="$(basename "$file" .json)"
+            target="${target#Tests-}"
+            total="$(jq 'length' "$file")"
+            pass="$(jq '[.[] | select(.result == "pass")] | length' "$file")"
+            non_pass="$(jq '[.[] | select(.result != "pass")] | length' "$file")"
+
+            printf '| %s | %s | %s | %s |\n' "$target" "$pass" "$non_pass" "$total" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$total" -eq 0 ] || [ "$non_pass" -ne 0 ]; then
+              failed=1
+              jq -r --arg target "$target" '.[] | select(.result != "pass") | "::error title=qcom-next::\($target): \(.name) => \(.result)"' "$file"
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "qcom-next result: failed"
+            exit 1
+          fi
+
+          echo "qcom-next result: passed"

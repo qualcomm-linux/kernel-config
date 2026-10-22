@@ -107,9 +107,9 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    if: inputs.repo == 'qualcomm-linux/kernel'
+    if: inputs.repo == 'qualcomm-linux/kernel' || inputs.repo == 'qualcomm-linux-stg/kernel'
     needs: [init-status, loading, build]
-    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
+    uses: ./.github/workflows/test.yml
     secrets: inherit
     with:
       docker_image: ${{vars.TECH_TEAM_NAMESPACE}}/kmake-image:${{vars.KMAKE_IMAGE_VERSION}}
@@ -123,7 +123,7 @@ jobs:
 
   comment:
     needs: [test]
-    uses: qualcomm-linux/kernel-config/.github/workflows/comment.yml@main
+    uses: ./.github/workflows/comment.yml
     if: always() && inputs.pr != '' && inputs.pr != '0' && needs.test.result != 'skipped'
     secrets: inherit
     with:
