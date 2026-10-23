@@ -90,8 +90,8 @@ runs:
       if: steps.mode.outputs.mode == 'topics'
       shell: bash
       run: |
-        git clone https://github.com/qualcomm-linux/kernel.git
-        git clone https://github.com/qualcomm-linux/automerge.git
+        git clone https://github.com/qualcomm-linux-stg/kernel.git kernel
+        git clone --branch sha_config_yaml https://github.com/sgaud-quic/automerge.git
 
     - name: Scan PR Description
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
@@ -162,18 +162,135 @@ runs:
         fi
         cat topic-branches
 
-    - name: Create merge configuration
+    - name: Create qcom-next YAML for topic PR
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       shell: bash
       run: |
-        TOPIC_BRANCH=${{ inputs.base_branch }}
-        echo "baseline https://github.com/qualcomm-linux/kernel.git qcom-next" > merge.conf
-        while IFS=',' read -r pr_number topic_branch; do
-          echo "$topic_branch https://github.com/qualcomm-linux/kernel-topics.git $topic_branch" >> merge.conf
-        done < topic-branches
-        echo "topic https://github.com/qualcomm-linux/kernel-topics.git $TOPIC_BRANCH" >> merge.conf
-        echo "File 'merge.conf' created successfully."
-        cat merge.conf
+        set -euo pipefail
+        topic_branch="${{ inputs.base_branch }}"
+        config_root="$(cd "${{ github.action_path }}/../../.." && pwd)"
+        config_in="$config_root/qcom-next.yaml"
+        config_out="$GITHUB_WORKSPACE/qcom-next-pr.yaml"
+
+        topics_file="$GITHUB_WORKSPACE/topic-overrides.txt"
+        printf '%s\n' "$topic_branch" > "$topics_file"
+        if [ -s topic-branches ]; then
+          cut -d, -f2 topic-branches >> "$topics_file"
+        fi
+        sort -u "$topics_file" -o "$topics_file"
+
+        deps_file="$GITHUB_WORKSPACE/topic-dependencies.json"
+        if [ -s topic-branches ]; then
+          cut -d, -f2 topic-branches | sort -u | jq -R . | jq -s . > "$deps_file"
+        else
+          jq -n '[]' > "$deps_file"
+        fi
+
+        : > "$GITHUB_WORKSPACE/topic-override-shas.jsonl"
+        while IFS= read -r override_branch; do
+          [ -z "$override_branch" ] && continue
+          override_sha="$(git ls-remote https://github.com/qualcomm-linux/kernel-topics.git "refs/heads/${override_branch}" | awk '{print $1}')"
+          if [ -z "$override_sha" ]; then
+            echo "ERROR: topic branch '${override_branch}' was not found in qualcomm-linux/kernel-topics" >&2
+            exit 1
+          fi
+          jq -n --arg branch "$override_branch" --arg sha "$override_sha" '{($branch): $sha}' >> "$GITHUB_WORKSPACE/topic-override-shas.jsonl"
+        done < "$topics_file"
+        jq -s 'add' "$GITHUB_WORKSPACE/topic-override-shas.jsonl" > "$GITHUB_WORKSPACE/topic-override-shas.json"
+
+        CONFIG_IN="$config_in" CONFIG_OUT="$config_out" OVERRIDES_JSON="$GITHUB_WORKSPACE/topic-override-shas.json" DEP_TOPICS_JSON="$deps_file" PRIMARY_TOPIC="$topic_branch" python3 <<'PY'
+        import os
+        import sys
+        import json
+
+        config_in = os.environ["CONFIG_IN"]
+        config_out = os.environ["CONFIG_OUT"]
+        primary_topic = os.environ["PRIMARY_TOPIC"]
+        with open(os.environ["OVERRIDES_JSON"], encoding="utf-8") as f:
+            overrides = json.load(f)
+        with open(os.environ["DEP_TOPICS_JSON"], encoding="utf-8") as f:
+            dep_topics = json.load(f)
+
+        with open(config_in, encoding="utf-8") as f:
+            lines = f.readlines()
+
+        out = []
+        block = []
+        matched = set()
+
+        def flush_topic(topic_block):
+            global matched
+            if not topic_block:
+                return
+            topic_name = None
+            for line in topic_block:
+                stripped = line.strip()
+                if stripped.startswith("name:") or stripped.startswith("branch:"):
+                    value = stripped.split(":", 1)[1].strip().strip('"')
+                    if value in overrides:
+                        topic_name = value
+                        break
+            if topic_name:
+                matched.add(topic_name)
+                for line in topic_block:
+                    stripped = line.strip()
+                    if stripped.startswith("sha:"):
+                        out.append(f"    sha: {overrides[topic_name]}\n")
+                    elif stripped.startswith("tag:"):
+                        out.append("    tag: null\n")
+                    elif topic_name == primary_topic and stripped.startswith("depends_on:"):
+                        raw_deps = stripped.split(":", 1)[1].strip()
+                        existing_deps = []
+                        if raw_deps.startswith("[") and raw_deps.endswith("]"):
+                            existing_deps = [
+                                dep.strip().strip('"').strip("'")
+                                for dep in raw_deps[1:-1].split(",")
+                                if dep.strip()
+                            ]
+                        combined_deps = sorted(set(existing_deps + dep_topics))
+                        out.append(f"    depends_on: {json.dumps(combined_deps)}\n")
+                    else:
+                        out.append(line)
+            else:
+                out.extend(topic_block)
+
+        in_topics = False
+        for line in lines:
+            if line.startswith("topics:"):
+                in_topics = True
+                out.append(line)
+                continue
+            if in_topics and line.startswith("  - name:"):
+                flush_topic(block)
+                block = [line]
+                continue
+            if in_topics and block:
+                block.append(line)
+            else:
+                out.append(line)
+
+        flush_topic(block)
+
+        missing = sorted(set(overrides) - matched)
+        if primary_topic in missing:
+            print(f"ERROR: topic '{primary_topic}' was not found in {config_in}", file=sys.stderr)
+            sys.exit(1)
+        for topic in missing:
+            out.extend([
+                f"  - name: {topic}\n",
+                "    repo: \"https://github.com/qualcomm-linux/kernel-topics.git\"\n",
+                f"    branch: {topic}\n",
+                f"    sha: {overrides[topic]}\n",
+                "    tag: null\n",
+                "    depends_on: []\n",
+            ])
+
+        with open(config_out, "w", encoding="utf-8") as f:
+            f.writelines(out)
+        PY
+
+        echo "Using qcom-next.yaml with these topic overrides:"
+        jq . "$GITHUB_WORKSPACE/topic-override-shas.json"
 
     - name: Run auto merge
       id: automerge
@@ -181,7 +298,8 @@ runs:
       shell: bash
       run: |
         cd kernel
-        ../automerge/ci-merge -f ../merge.conf -t head -n
+        #../automerge/ci-merge --yaml-config ../qcom-next-pr.yaml -t head -i qcom-next -n
+        ../automerge/ci-merge --yaml-config ../qcom-next-pr.yaml -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n -p | tee $GITHUB_WORKSPACE/merge.log
 
     - name: Fetch PR
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
@@ -189,8 +307,12 @@ runs:
       run: |
         cd kernel
         git fetch https://github.com/qualcomm-linux/kernel-topics.git pull/${{inputs.pr_number}}/head:pr-${{inputs.pr_number}}
-        git merge pr-${{inputs.pr_number}} --no-commit
-        git commit -m "Merged PR ${{inputs.pr_number}}"
+        git merge pr-${{inputs.pr_number}} --no-commit || echo "Merge already applied or fast-forwarded"
+        if ! git diff --cached --quiet; then
+          git commit -m "Merged PR ${{inputs.pr_number}}"
+        else
+          echo "Nothing to commit. PR may already be included in the topic branch tip."
+        fi
 
     - name: Fetch PR
       if: steps.mode.outputs.mode == 'pr'
