@@ -235,7 +235,7 @@ topics:
   - name: tech/all/dt/glymur
     repo: "https://github.com/qualcomm-linux/kernel-topics.git"
     branch: tech/all/dt/glymur
-    sha: e69025f64fe7a2f25c1ae07e1e9cf5be2ffdfaf3
+    sha: 6d2b4296bc5a7ef8e3f981f93295e70eba0e885f
     tag: null
     depends_on: []
   - name: tech/all/dt/kaanapali
