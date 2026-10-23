@@ -211,7 +211,7 @@ topics:
   - name: tech/all/dt/qcs615
     repo: "https://github.com/qualcomm-linux/kernel-topics.git"
     branch: tech/all/dt/qcs615
-    sha: c3eea9f1b49f374d19aee3339200cef537b6173b
+    sha: 4bc8635623a5bb44afd03203ffa1c8759c58bae6
     tag: null
     depends_on: []
   - name: tech/all/dt/agatti
