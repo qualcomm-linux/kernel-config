@@ -45,7 +45,7 @@ jobs:
   loading:
     name: Load Parameters
     needs: init-status
-    uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
+    uses: ./.github/workflows/loading.yml
     secrets: inherit
     with:
       branch: ${{ inputs.ref }}
@@ -53,7 +53,7 @@ jobs:
   build_yocto:
     name: Build Yocto
     needs: [init-status, loading]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
+    uses: ./.github/workflows/build-yocto.yml
     secrets: inherit
     with:
       repo: ${{ inputs.repo || 'qualcomm-linux/kernel' }}
@@ -83,7 +83,7 @@ jobs:
       fail-fast: false
       matrix:
         image_type: [multimedia, proprietary]
-    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
+    uses: ./.github/workflows/test.yml
     secrets: inherit
     with:
       docker_image:  ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
@@ -173,8 +173,10 @@ jobs:
               printf "| Test Case "
               for t in "${TARGETS[@]}"; do
                 target_label="$t"
-                if [ -n "${JOB_URLS[$t]:-}" ]; then
-                  target_label="[$t](${JOB_URLS[$t]})"
+                job_key="${t#yocto-}"
+                job_key="${job_key#kbdev-}"
+                if [ -n "${JOB_URLS[$job_key]:-}" ]; then
+                  target_label="[$t](${JOB_URLS[$job_key]})"
                 fi
                 printf "| %s " "$target_label"
               done

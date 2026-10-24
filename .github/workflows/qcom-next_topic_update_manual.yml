@@ -1,0 +1,60 @@
+---
+name: qcom-next topic update manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: PR numbers to validate. Accepts JSON array, comma, whitespace, or newline separated values.
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  parse-prs:
+    name: Parse PR list
+    runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.parse.outputs.prs }}
+    steps:
+      - name: Parse PR numbers
+        id: parse
+        uses: actions/github-script@v7
+        env:
+          RAW_PR_NUMBERS: ${{ inputs.pr_numbers }}
+        with:
+          script: |
+            const raw = process.env.RAW_PR_NUMBERS.trim();
+            let prs;
+
+            if (raw.startsWith('[')) {
+              prs = JSON.parse(raw);
+            } else {
+              prs = raw.split(/[\s,]+/).filter(Boolean);
+            }
+
+            prs = [...new Set(prs.map(String).map((pr) => pr.trim()))];
+            const invalid = prs.filter((pr) => !/^\d+$/.test(pr));
+            if (invalid.length) {
+              core.setFailed(`Invalid PR number(s): ${invalid.join(', ')}`);
+              return;
+            }
+            if (!prs.length) {
+              core.setFailed('No PR numbers were provided.');
+              return;
+            }
+
+            core.setOutput('prs', JSON.stringify(prs));
+            core.info(`PRs: ${prs.join(', ')}`);
+
+  qcom-next:
+    name: qcom-next PR batch
+    needs: parse-prs
+    uses: ./.github/workflows/qcom-next_topic_update.yml
+    secrets: inherit
+    with:
+      pr_numbers: ${{ needs.parse-prs.outputs.prs }}

@@ -1,0 +1,177 @@
+name: Promote Kernel to meta-qcom
+description: >
+  Updates the linux-qcom-next_git.bb or linux-qcom_6.18.bb recipe in
+  qualcomm-linux/meta-qcom with a new tag + SRCREV + LINUX_VERSION,
+  generates a changelog from git log between the old and new tag, commits
+  to the dedicated update branch, and opens (or updates) a PR against master.
+
+inputs:
+  branch:
+    description: Kernel branch being promoted (qcom-next-staging or qcom-6.18.y)
+    required: true
+  tag_name:
+    description: New kernel tag name (e.g. qcom-next-7.0-rc7-20260429)
+    required: true
+  tag_sha:
+    description: Commit SHA the new tag points to
+    required: true
+  linux_version:
+    description: LINUX_VERSION string to write into the recipe (e.g. 6.19+7.0-rc7)
+    required: true
+  GH_TOKEN:
+    description: PAT with contents:write + pull-requests:write on qualcomm-linux/meta-qcom
+    required: true
+
+outputs:
+  pr_url:
+    description: URL of the opened (or updated) pull request
+    value: ${{ steps.promote.outputs.pr_url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Promote kernel in meta-qcom
+      id: promote
+      shell: python3 {0}
+      env:
+        GH_TOKEN: ${{ inputs.GH_TOKEN }}
+        BRANCH: ${{ inputs.branch }}
+        TAG_NAME: ${{ inputs.tag_name }}
+        TAG_SHA: ${{ inputs.tag_sha }}
+        LINUX_VERSION: ${{ inputs.linux_version }}
+        GITHUB_OUTPUT: ${{ github.output }}
+      run: |
+        import os, re, subprocess, sys, json
+        from urllib import request, error as urlerror
+
+        GH_TOKEN     = os.environ["GH_TOKEN"]
+        BRANCH       = os.environ["BRANCH"]
+        TAG_NAME     = os.environ["TAG_NAME"]
+        TAG_SHA      = os.environ["TAG_SHA"]
+        LINUX_VERSION = os.environ["LINUX_VERSION"]
+        GITHUB_OUTPUT = os.environ.get("GITHUB_OUTPUT", "")
+        META_REPO    = "qualcomm-linux/meta-qcom"
+        KERNEL_REPO  = "qualcomm-linux/kernel"
+
+        def gh(method, path, body=None):
+            url = f"https://api.github.com{path}"
+            data = json.dumps(body).encode() if body else None
+            req = request.Request(url, data=data, method=method, headers={
+                "Authorization": f"Bearer {GH_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            })
+            try:
+                with request.urlopen(req) as r:
+                    return json.loads(r.read()), r.status
+            except urlerror.HTTPError as e:
+                return json.loads(e.read()), e.code
+
+        def run(*cmd, **kw):
+            return subprocess.run(list(cmd), check=True, **kw)
+
+        def run_out(*cmd):
+            return subprocess.check_output(list(cmd), text=True).strip()
+
+        # ── Determine recipe file and update branch ───────────────────────────
+        if BRANCH in ("qcom-next-staging", "qcom-next"):
+            RECIPE        = "recipes-kernel/linux/linux-qcom-next_git.bb"
+            UPDATE_BRANCH = "qcom-next-update"
+            PR_TITLE      = f"linux-qcom-next: update to tag {TAG_NAME}"
+            TAG_COMMENT   = f"# tag: {TAG_NAME}"
+        else:
+            RECIPE        = "recipes-kernel/linux/linux-qcom_6.18.bb"
+            UPDATE_BRANCH = "qcom-6.18-update"
+            PR_TITLE      = f"linux-qcom-6.18: update to tag {TAG_NAME}"
+            TAG_COMMENT   = f"# tag:{TAG_NAME}"
+
+        # ── Clone meta-qcom ───────────────────────────────────────────────────
+        print(f"Cloning {META_REPO} branch {UPDATE_BRANCH}")
+        run("git", "config", "--global", "user.name",  "QLI CI Bot")
+        run("git", "config", "--global", "user.email", "qualcomm-linux@qualcomm.com")
+        run("git", "clone", "--depth=50", "--branch", UPDATE_BRANCH,
+            f"https://x-access-token:{GH_TOKEN}@github.com/{META_REPO}.git",
+            "meta-qcom")
+        os.chdir("meta-qcom")
+
+        # ── Read current values ───────────────────────────────────────────────
+        with open(RECIPE) as f:
+            recipe_text = f.read()
+
+        m_tag    = re.search(r'# tag[: ]\s*(\S+)', recipe_text)
+        m_srcrev = re.search(r'SRCREV \?= "([0-9a-f]+)"', recipe_text)
+        OLD_TAG    = m_tag.group(1)    if m_tag    else ""
+        OLD_SRCREV = m_srcrev.group(1) if m_srcrev else ""
+        print(f"Old tag   : {OLD_TAG}")
+        print(f"Old SRCREV: {OLD_SRCREV}")
+        print(f"New tag   : {TAG_NAME}")
+        print(f"New SRCREV: {TAG_SHA}")
+
+        if OLD_SRCREV == TAG_SHA:
+            print("Recipe already up-to-date – nothing to do.")
+            data, _ = gh("GET", f"/repos/{META_REPO}/pulls?head=qualcomm-linux:{UPDATE_BRANCH}&state=open")
+            pr_url = data[0]["html_url"] if data else ""
+            if GITHUB_OUTPUT:
+                with open(GITHUB_OUTPUT, "a") as f:
+                    f.write(f"pr_url={pr_url}\n")
+            sys.exit(0)
+
+        # ── Generate changelog ────────────────────────────────────────────────
+        print(f"Fetching changelog {OLD_TAG}..{TAG_NAME}")
+        data, status = gh("GET", f"/repos/{KERNEL_REPO}/compare/{OLD_TAG}...{TAG_NAME}")
+        if status == 200:
+            commits = data.get("commits", [])
+            skip_re = re.compile(r'^(Merge|Revert|ci:|CI:)', re.IGNORECASE)
+            lines = []
+            for c in commits:
+                subject = c["commit"]["message"].split("\n")[0]
+                if not skip_re.match(subject):
+                    lines.append(subject)
+            changelog = "\n".join(lines[:50]) if lines else "No individual commits listed."
+        else:
+            changelog = f"Could not fetch changelog (HTTP {status})."
+        print(f"Changelog ({len(changelog.splitlines())} lines)")
+
+        # ── Patch recipe ──────────────────────────────────────────────────────
+        recipe_text = re.sub(r'# tag[: ]\s*\S+', TAG_COMMENT, recipe_text)
+        recipe_text = re.sub(r'SRCREV \?= "[0-9a-f]+"', f'SRCREV ?= "{TAG_SHA}"', recipe_text)
+        if re.search(r'^LINUX_VERSION', recipe_text, re.MULTILINE):
+            recipe_text = re.sub(
+                r'^LINUX_VERSION \?= ".*"',
+                f'LINUX_VERSION ?= "{LINUX_VERSION}"',
+                recipe_text, flags=re.MULTILINE)
+        with open(RECIPE, "w") as f:
+            f.write(recipe_text)
+        print("Recipe patched")
+
+        # ── Commit and push ───────────────────────────────────────────────────
+        run("git", "add", RECIPE)
+        run("git", "diff", "--cached", "--stat")
+        commit_msg = (
+            f"{PR_TITLE}\n\n"
+            f"Changelog:\n{changelog}\n\n"
+            f"Signed-off-by: QLI CI Bot <qualcomm-linux@qualcomm.com>"
+        )
+        run("git", "commit", "-m", commit_msg)
+        run("git", "push", "origin", UPDATE_BRANCH)
+        print("Pushed to", UPDATE_BRANCH)
+
+        # ── Open or update PR ─────────────────────────────────────────────────
+        pr_body = f"Changelog:\n{changelog}"
+        existing, _ = gh("GET", f"/repos/{META_REPO}/pulls?head=qualcomm-linux:{UPDATE_BRANCH}&state=open")
+        if existing:
+            pr_num = existing[0]["number"]
+            print(f"Updating existing PR #{pr_num}")
+            result, _ = gh("PATCH", f"/repos/{META_REPO}/pulls/{pr_num}",
+                           {"title": PR_TITLE, "body": pr_body})
+        else:
+            print(f"Opening new PR: {PR_TITLE}")
+            result, _ = gh("POST", f"/repos/{META_REPO}/pulls",
+                           {"title": PR_TITLE, "body": pr_body,
+                            "head": UPDATE_BRANCH, "base": "master"})
+
+        pr_url = result.get("html_url", "")
+        print(f"PR URL: {pr_url}")
+        if GITHUB_OUTPUT:
+            with open(GITHUB_OUTPUT, "a") as f:
+                f.write(f"pr_url={pr_url}\n")

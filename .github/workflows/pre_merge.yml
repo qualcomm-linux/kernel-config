@@ -1,18 +1,38 @@
 name: pre_merge
-run-name: "${{ format('premerge: {0} - PR #{1}', inputs.repo, inputs.pr) }}"
+run-name: "${{ inputs.pr != '' && inputs.pr != '0' && format('premerge: {0} - PR #{1}', inputs.repo, inputs.pr) || format('premerge: {0} @ {1}', inputs.repo, inputs.ref) }}"
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       pr:
-        description: Pull request number
+        description: Pull request number. Leave empty or 0 to build ref as-is.
         type: string
-        required: true
+        required: false
+        default: "0"
       sha:
-        description: Head sha of the PR
+        description: Commit SHA for status/check reporting.
         type: string
         required: true
       ref:
-        description: Target branch
+        description: Target branch/ref. With no PR, this ref is checked out and built as-is.
+        type: string
+        required: true
+      repo:
+        description: Target repository
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number. Leave empty or 0 to build ref as-is.
+        type: string
+        required: false
+        default: "0"
+      sha:
+        description: Commit SHA for status/check reporting.
+        type: string
+        required: true
+      ref:
+        description: Target branch/ref. With no PR, this ref is checked out and built as-is.
         type: string
         required: true
       repo:
@@ -35,14 +55,14 @@ jobs:
 
   loading:
     needs: [init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
+    uses: ./.github/workflows/loading.yml
     secrets: inherit
     with:
       branch: ${{ inputs.ref }}
 
   build:
     needs: [loading, init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build.yml@main
+    uses: ./.github/workflows/build.yml
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
@@ -54,7 +74,7 @@ jobs:
 
   build_rt:
     needs: [loading, init-status]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build_rt.yml@main
+    uses: ./.github/workflows/build_rt.yml
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
@@ -77,9 +97,9 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    if: inputs.repo == 'qualcomm-linux/kernel'
+    if: inputs.repo == 'qualcomm-linux/kernel' || inputs.repo == 'qualcomm-linux-stg/kernel'
     needs: [init-status, loading, build]
-    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
+    uses: ./.github/workflows/test.yml
     secrets: inherit
     with:
       docker_image: ${{vars.TECH_TEAM_NAMESPACE}}/kmake-image:${{vars.KMAKE_IMAGE_VERSION}}
@@ -93,8 +113,8 @@ jobs:
 
   comment:
     needs: [test]
-    uses: qualcomm-linux/kernel-config/.github/workflows/comment.yml@main
-    if: always() && needs.test.result != 'skipped' 
+    uses: ./.github/workflows/comment.yml
+    if: always() && inputs.pr != '' && inputs.pr != '0' && needs.test.result != 'skipped'
     secrets: inherit
     with:
       pr_number: ${{ inputs.pr }}

@@ -1,0 +1,21 @@
+---
+name: qcom-next publish manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: qcom-next CI run id containing the accepted candidate metadata
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  publish:
+    uses: ./.github/workflows/qcom-next_publish.yml
+    secrets: inherit
+    with:
+      run_id: ${{ inputs.run_id }}

@@ -1,0 +1,21 @@
+---
+name: qcom-next topic update PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - qcom-next.yaml
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  qcom-next:
+    name: qcom-next PR ${{ github.event.pull_request.number }}
+    uses: ./.github/workflows/qcom-next_topic_update.yml
+    secrets: inherit
+    with:
+      pr_number: ${{ github.event.pull_request.number }}

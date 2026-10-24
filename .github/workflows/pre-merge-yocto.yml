@@ -3,12 +3,43 @@ name: pre_merge_yocto
 run-name: Compile Yocto Build
 
 on:
+  workflow_call:
+    inputs:
+      pr:
+        description: Pull request number. Leave empty or 0 to build ref as-is.
+        type: string
+        required: false
+        default: "0"
+      sha:
+        description: Head sha to build
+        type: string
+        required: true
+      ref:
+        description: Target branch/ref
+        type: string
+        required: true
+      repo:
+        description: Target repository
+        type: string
+        required: false
+        default: qualcomm-linux/kernel
+      base:
+        description: base build or tip
+        type: string
+        default: tag
+        required: false
+      pr_list:
+        description: list of open PR's
+        type: string
+        default: ''
+        required: false
   workflow_dispatch:
     inputs:
       pr:
-        description: Pull request number
+        description: Pull request number. Leave empty or 0 to build ref as-is.
         type: string
-        required: true
+        required: false
+        default: "0"
       sha:
         description: Head sha of the PR
         type: string
@@ -40,16 +71,16 @@ jobs:
       - name: Set Status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
-          sha: ${{ github.event.inputs.sha || github.sha }}
+          sha: ${{ inputs.sha }}
           action_mode: start
           check_name: "Yocto Build Generation"
-          repo: ${{ github.event.inputs.repo || github.repository }}
+          repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
 
   loading:
     name: Load Parameters
     needs: init-status
-    uses: qualcomm-linux/kernel-config/.github/workflows/loading.yml@main
+    uses: ./.github/workflows/loading.yml
     secrets: inherit
     with:
       branch: ${{ inputs.ref }}
@@ -57,7 +88,7 @@ jobs:
   build_yocto:
     name: Build Yocto
     needs: [init-status, loading]
-    uses: qualcomm-linux/kernel-config/.github/workflows/build-yocto.yml@main
+    uses: ./.github/workflows/build-yocto.yml
     secrets: inherit
     with:
       repo: ${{ inputs.repo || 'qualcomm-linux/kernel' }}
@@ -87,7 +118,7 @@ jobs:
       fail-fast: false
       matrix:
         image_type: [multimedia, proprietary]
-    uses: qualcomm-linux/kernel-config/.github/workflows/test.yml@main
+    uses: ./.github/workflows/test.yml
     secrets: inherit
     with:
       docker_image: ${{ vars.TECH_TEAM_NAMESPACE }}/kmake-image:${{ vars.KMAKE_IMAGE_VERSION }}
@@ -177,8 +208,10 @@ jobs:
               printf "| Test Case "
               for t in "${TARGETS[@]}"; do
                 target_label="$t"
-                if [ -n "${JOB_URLS[$t]:-}" ]; then
-                  target_label="[$t](${JOB_URLS[$t]})"
+                job_key="${t#yocto-}"
+                job_key="${job_key#kbdev-}"
+                if [ -n "${JOB_URLS[$job_key]:-}" ]; then
+                  target_label="[$t](${JOB_URLS[$job_key]})"
                 fi
                 printf "| %s " "$target_label"
               done
@@ -239,8 +272,8 @@ jobs:
       - name: Set final status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
-          sha: ${{ github.event.inputs.sha || github.sha }}
+          sha: ${{ inputs.sha }}
           action_mode: ${{ needs.build_yocto.result == 'success' && needs.test.result || needs.build_yocto.result }}
           check_name: "Yocto Build Generation"
-          repo: ${{ github.event.inputs.repo || github.repository }}
+          repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}

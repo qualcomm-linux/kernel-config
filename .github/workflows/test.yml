@@ -229,7 +229,7 @@ jobs:
                       name: .name,
                       result: .result
                   })
-              ' "$IN" > "lava-results/Tests-${MACHINE}-${IMAGE_TYPE}.json"
+              ' "$IN" > "lava-results/Tests-${{ inputs.build_type }}-${MACHINE}-${IMAGE_TYPE}.json"
 
       - name: Update summary
         if: success() || failure()
@@ -253,12 +253,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: job_info_${{ matrix.rootfs_matrix.machine }}_${{ inputs.image_type }}
+          name: job_info_${{ inputs.build_type }}_${{ matrix.rootfs_matrix.machine }}_${{ inputs.image_type }}
           path: job_info.md
 
       - name: Upload Lava Json File
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Tests-${{ matrix.rootfs_matrix.machine }}-${{ inputs.image_type }}
+          name: Tests-${{ inputs.build_type }}-${{ matrix.rootfs_matrix.machine }}-${{ inputs.image_type }}
           path: lava-results/*.json

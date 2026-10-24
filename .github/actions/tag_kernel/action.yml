@@ -1,0 +1,116 @@
+name: Tag Kernel Branch
+description: >
+  Creates a signed lightweight tag on the qualcomm-linux/kernel repository
+  at the current HEAD of the given branch, then resolves the commit SHA the
+  tag points to.  The tag name is either supplied by the caller or generated
+  automatically from the branch name and today's date.
+
+inputs:
+  branch:
+    description: Kernel branch to tag (e.g. qcom-next-staging or qcom-6.18.y)
+    required: true
+  tag_name:
+    description: >
+      Explicit tag name to create.  When empty the action generates one:
+        qcom-next-staging  ->  qcom-next-<LINUX_VERSION>-<YYYYMMDD>
+        qcom-6.18.y        ->  qcom-6.18.y-<YYYYMMDD>
+    required: false
+    default: ''
+  GH_TOKEN:
+    description: PAT with contents:write on qualcomm-linux/kernel
+    required: true
+
+outputs:
+  tag_name:
+    description: The tag that was created
+    value: ${{ steps.create-tag.outputs.tag_name }}
+  tag_sha:
+    description: The commit SHA the tag points to
+    value: ${{ steps.create-tag.outputs.tag_sha }}
+  linux_version:
+    description: LINUX_VERSION string derived from the kernel Makefile
+    value: ${{ steps.create-tag.outputs.linux_version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create tag on kernel repo
+      id: create-tag
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.GH_TOKEN }}
+        BRANCH: ${{ inputs.branch }}
+        TAG_INPUT: ${{ inputs.tag_name }}
+      run: |
+        set -euo pipefail
+        KERNEL_REPO="qualcomm-linux/kernel"
+        DATE=$(date -u +%Y%m%d)
+
+        echo "::group::Resolve HEAD SHA for branch ${BRANCH}"
+        HEAD_SHA=$(curl -fsSL \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${KERNEL_REPO}/git/ref/heads/${BRANCH}" \
+          | jq -r '.object.sha')
+        echo "HEAD SHA: ${HEAD_SHA}"
+        echo "::endgroup::"
+
+        echo "::group::Derive LINUX_VERSION from kernel Makefile"
+        MAKEFILE=$(curl -fsSL \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${KERNEL_REPO}/contents/Makefile?ref=${HEAD_SHA}" \
+          | jq -r '.content' | base64 -d)
+
+        VERSION=$(echo "$MAKEFILE"    | grep '^VERSION = '    | awk '{print $3}')
+        PATCHLEVEL=$(echo "$MAKEFILE" | grep '^PATCHLEVEL = ' | awk '{print $3}')
+        SUBLEVEL=$(echo "$MAKEFILE"   | grep '^SUBLEVEL = '   | awk '{print $3}')
+        EXTRAVERSION=$(echo "$MAKEFILE" | grep '^EXTRAVERSION = ' | sed 's/EXTRAVERSION = //')
+
+        if [[ "${BRANCH}" == "qcom-next-staging" || "${BRANCH}" == "qcom-next" ]]; then
+          # e.g. 6.19+7.0-rc7  (upstream VERSION.PATCHLEVEL + EXTRAVERSION)
+          LINUX_VERSION="${VERSION}.${PATCHLEVEL}${EXTRAVERSION}"
+          # rc label for tag: 7.0-rc7
+          RC_LABEL="${VERSION}.${PATCHLEVEL}${EXTRAVERSION}"
+          # tag format: qcom-next-7.0-rc7-20260429
+          AUTO_TAG="qcom-next-${RC_LABEL}-${DATE}"
+        else
+          # qcom-6.18.y  ->  LINUX_VERSION = 6.18.21
+          LINUX_VERSION="${VERSION}.${PATCHLEVEL}.${SUBLEVEL}"
+          AUTO_TAG="qcom-6.18.y-${DATE}"
+        fi
+
+        TAG_NAME="${TAG_INPUT:-${AUTO_TAG}}"
+        echo "Tag name  : ${TAG_NAME}"
+        echo "LINUX_VERSION: ${LINUX_VERSION}"
+        echo "::endgroup::"
+
+        echo "::group::Create tag ${TAG_NAME} on ${KERNEL_REPO}"
+        HTTP_STATUS=$(curl -fsSL -o /tmp/tag_response.json -w "%{http_code}" \
+          -X POST \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${KERNEL_REPO}/git/refs" \
+          -d "{\"ref\":\"refs/tags/${TAG_NAME}\",\"sha\":\"${HEAD_SHA}\"}")
+
+        if [[ "${HTTP_STATUS}" == "422" ]]; then
+          echo "Tag ${TAG_NAME} already exists – resolving its SHA"
+          TAG_SHA=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${KERNEL_REPO}/git/ref/tags/${TAG_NAME}" \
+            | jq -r '.object.sha')
+        elif [[ "${HTTP_STATUS}" == "201" ]]; then
+          TAG_SHA=$(jq -r '.object.sha' /tmp/tag_response.json)
+          echo "Tag created successfully"
+        else
+          echo "Unexpected HTTP status ${HTTP_STATUS} creating tag"
+          cat /tmp/tag_response.json
+          exit 1
+        fi
+        echo "Tag SHA: ${TAG_SHA}"
+        echo "::endgroup::"
+
+        echo "tag_name=${TAG_NAME}"       >> "$GITHUB_OUTPUT"
+        echo "tag_sha=${TAG_SHA}"         >> "$GITHUB_OUTPUT"
+        echo "linux_version=${LINUX_VERSION}" >> "$GITHUB_OUTPUT"
