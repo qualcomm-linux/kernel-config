@@ -103,7 +103,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/kernel"
           date_stamp="$(date +%Y%m%d)"
 
-          if [[ "${{ inputs.branch_name }}" == "qcom-next" ]]; then
+          if [[ "${{ inputs.branch_name }}" == "qcom-next" || "${{ inputs.repo }}" == "qualcomm-linux/kernel-topics" ]]; then
             kver=$(awk '/^VERSION[[:space:]]*=/{v=$3} /^PATCHLEVEL[[:space:]]*=/{p=$3} /^EXTRAVERSION[[:space:]]*=/{e=$3} END{printf "%s.%s%s", v, p, e}' Makefile)
             tag_name="${{ inputs.branch_name }}-${kver}-${date_stamp}"
           else
