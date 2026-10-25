@@ -1,0 +1,223 @@
+---
+name: qcom-next promote topic
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic_branch:
+        description: Topic branch name in qcom-next.yaml, for example tech/all/dt/glymur
+        type: string
+        required: true
+      sha:
+        description: Commit SHA to promote for the topic branch
+        type: string
+        required: true
+      tag:
+        description: Optional tag name to record for the topic. Leave empty to set tag to null.
+        type: string
+        required: false
+        default: ""
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-pr:
+    name: Create qcom-next promotion PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+
+      - name: Update qcom-next.yaml
+        id: update
+        env:
+          TOPIC_BRANCH: ${{ inputs.topic_branch }}
+          TOPIC_SHA: ${{ inputs.sha }}
+          TOPIC_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$TOPIC_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error title=qcom-next::sha must be a 40-character hex commit SHA"
+            exit 1
+          fi
+
+          base_branch="${GITHUB_REF_NAME}"
+          short_sha="${TOPIC_SHA:0:12}"
+          safe_topic="$(printf '%s' "$TOPIC_BRANCH" | tr '/[:space:]' '--' | tr -cd 'A-Za-z0-9._-')"
+          pr_branch="tmp/qcom-next-promote-${safe_topic}-${short_sha}"
+
+          git checkout -B "$pr_branch" "origin/${base_branch}"
+
+          python3 <<'PY'
+          import os
+          import sys
+
+          path = "qcom-next.yaml"
+          topic = os.environ["TOPIC_BRANCH"]
+          sha = os.environ["TOPIC_SHA"]
+          tag = os.environ["TOPIC_TAG"]
+
+          with open(path, encoding="utf-8") as f:
+              lines = f.readlines()
+
+          out = []
+          block = []
+          matched = False
+
+          def flush_topic(topic_block):
+              global matched
+              if not topic_block:
+                  return
+              is_target = any(
+                  line.strip() in (f"name: {topic}", f"branch: {topic}")
+                  or line.strip() in (f"name: \"{topic}\"", f"branch: \"{topic}\"")
+                  for line in topic_block
+              )
+              if is_target:
+                  matched = True
+                  for line in topic_block:
+                      stripped = line.strip()
+                      if stripped.startswith("sha:"):
+                          out.append(f"    sha: {sha}\n")
+                      elif stripped.startswith("tag:"):
+                          out.append(f"    tag: {tag}\n" if tag else "    tag: null\n")
+                      else:
+                          out.append(line)
+              else:
+                  out.extend(topic_block)
+
+          in_topics = False
+          for line in lines:
+              if line.startswith("topics:"):
+                  in_topics = True
+                  out.append(line)
+                  continue
+              if in_topics and line.startswith("  - name:"):
+                  flush_topic(block)
+                  block = [line]
+                  continue
+              if in_topics and block:
+                  block.append(line)
+              else:
+                  out.append(line)
+
+          flush_topic(block)
+
+          if not matched:
+              print(f"ERROR: topic '{topic}' was not found in {path}", file=sys.stderr)
+              sys.exit(1)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.writelines(out)
+          PY
+
+          if git diff --quiet -- qcom-next.yaml; then
+            echo "::notice title=qcom-next::qcom-next.yaml already contains the requested promotion"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "base_branch=$base_branch" >> "$GITHUB_OUTPUT"
+          echo "pr_branch=$pr_branch" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push promotion branch
+        if: steps.update.outputs.changed == 'true'
+        env:
+          TOPIC_BRANCH: ${{ inputs.topic_branch }}
+          TOPIC_SHA: ${{ inputs.sha }}
+          TOPIC_TAG: ${{ inputs.tag }}
+          PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add qcom-next.yaml
+
+          if [ -n "$TOPIC_TAG" ]; then
+            git commit -m "qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}" -m "Update ${TOPIC_BRANCH} to ${TOPIC_SHA}."
+          else
+            git commit -m "qcom-next: promote ${TOPIC_BRANCH} to ${{ steps.update.outputs.short_sha }}" -m "Update ${TOPIC_BRANCH} to ${TOPIC_SHA}."
+          fi
+
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin "HEAD:refs/heads/${{ steps.update.outputs.pr_branch }}"
+
+      - name: Create promotion PR
+        if: steps.update.outputs.changed == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          TOPIC_BRANCH: ${{ inputs.topic_branch }}
+          TOPIC_SHA: ${{ inputs.sha }}
+          TOPIC_TAG: ${{ inputs.tag }}
+          BASE_BRANCH: ${{ steps.update.outputs.base_branch }}
+          PR_BRANCH: ${{ steps.update.outputs.pr_branch }}
+          SHORT_SHA: ${{ steps.update.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TOPIC_TAG" ]; then
+            title="qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}"
+          else
+            title="qcom-next: promote ${TOPIC_BRANCH} to ${SHORT_SHA}"
+          fi
+
+          body="$(printf 'Promote qcom-next topic branch `%s`.\n\n| Field | Value |\n| --- | --- |\n| Topic branch | `%s` |\n| SHA | `%s` |\n| Tag | `%s` |\n\nThis PR is generated in the base repository so qcom-next CI can run with repository secrets.\n' \
+            "$TOPIC_BRANCH" \
+            "$TOPIC_BRANCH" \
+            "$TOPIC_SHA" \
+            "${TOPIC_TAG:-null}")"
+
+          existing_url="$(curl -sS -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls?head=${GITHUB_REPOSITORY_OWNER}:${PR_BRANCH}&base=${BASE_BRANCH}&state=open" \
+            | jq -r '.[0].html_url // empty')"
+          if [ -n "$existing_url" ]; then
+            echo "pr_url=$existing_url" >> "$GITHUB_OUTPUT"
+            echo "Existing PR: $existing_url"
+            exit 0
+          fi
+
+          payload="$(jq -n \
+            --arg title "$title" \
+            --arg head "$PR_BRANCH" \
+            --arg base "$BASE_BRANCH" \
+            --arg body "$body" \
+            '{title: $title, head: $head, base: $base, body: $body}')"
+          response="$(curl -sS -w '\n%{http_code}' -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d "$payload")"
+          http_code="$(printf '%s' "$response" | tail -n1)"
+          body_json="$(printf '%s' "$response" | sed '$d')"
+          if [ "$http_code" != "201" ]; then
+            echo "Failed to create PR (HTTP $http_code)" >&2
+            printf '%s\n' "$body_json" >&2
+            exit 1
+          fi
+          pr_url="$(printf '%s\n' "$body_json" | jq -r '.html_url')"
+          echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "Created PR: $pr_url"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### qcom-next promotion" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Topic branch: \`${{ inputs.topic_branch }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA: \`${{ inputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tag: \`${{ inputs.tag || 'null' }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ steps.pr.outputs.pr_url }}" ]; then
+            echo "PR: ${{ steps.pr.outputs.pr_url }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
