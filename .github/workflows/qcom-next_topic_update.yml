@@ -121,17 +121,26 @@ jobs:
           $GITHUB_WORKSPACE/automerge/ci-merge --yaml-config $GITHUB_WORKSPACE/kernel-config/qcom-next.yaml -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n -p | tee $GITHUB_WORKSPACE/merge.log
 
       - name: Parse and Add logs
-        env:
-          KERNEL_CONFIG_BASE_SHA: ${{ steps.merge_prs.outputs.base_sha }}
         run: |
           set -euo pipefail
           cd $GITHUB_WORKSPACE/kernel-topics
 
           mkdir qcom-next
-          git -C $GITHUB_WORKSPACE/kernel-config show "${KERNEL_CONFIG_BASE_SHA}:qcom-next.yaml" > $GITHUB_WORKSPACE/qcom-next-base.yaml
-          python3 <<'PY' > $GITHUB_WORKSPACE/changed-topics.json
-          import json
+          $GITHUB_WORKSPACE/automerge/log-parser.sh $GITHUB_WORKSPACE/merge.log
+          cp topic_SHA1 qcom-next
+
+          published_sha=""
+          if git fetch origin +refs/heads/qcom-next:refs/remotes/origin/qcom-next >/dev/null 2>&1; then
+            published_sha="$(git rev-parse refs/remotes/origin/qcom-next)"
+            git show refs/remotes/origin/qcom-next:qcom-next/topic_SHA1 > $GITHUB_WORKSPACE/published-topic_SHA1 2>/dev/null || true
+          fi
+          export PUBLISHED_SHA="$published_sha"
+          export CANDIDATE_SHA="$(git rev-parse refs/heads/qcom-next)"
+
+          python3 <<'PY' > qcom-next/candidate.diff
           import os
+
+          workspace = os.environ["GITHUB_WORKSPACE"]
 
           def clean(value):
               value = value.strip()
@@ -141,7 +150,7 @@ jobs:
                   value = value[1:-1]
               return value
 
-          def load_topics(path):
+          def load_yaml_topics(path):
               topics = {}
               current = None
               in_topics = False
@@ -169,79 +178,42 @@ jobs:
                   topics[current["name"]] = current
               return topics
 
-          base = load_topics(os.environ["GITHUB_WORKSPACE"] + "/qcom-next-base.yaml")
-          current = load_topics(os.environ["GITHUB_WORKSPACE"] + "/kernel-config/qcom-next.yaml")
+          def load_topic_sha1(path):
+              topics = {}
+              if not os.path.exists(path):
+                  return topics
+              with open(path, encoding="utf-8") as f:
+                  for raw in f:
+                      fields = raw.split()
+                      if len(fields) >= 2 and fields[1].lower() != "sha" and set(fields[0]) != {"-"}:
+                          topics[fields[0]] = fields[1]
+              return topics
+
+          yaml_topics = load_yaml_topics(workspace + "/kernel-config/qcom-next.yaml")
+          published = load_topic_sha1(workspace + "/published-topic_SHA1")
+          candidate = load_topic_sha1("topic_SHA1")
+
+          print("# qcom-next updated topics")
+          print(f"# Published qcom-next: {os.environ.get('PUBLISHED_SHA') or 'unavailable'}")
+          print(f"# Candidate qcom-next: {os.environ.get('CANDIDATE_SHA') or 'unavailable'}")
+          print()
+
           changed = []
-          for name in sorted(set(base) | set(current)):
-              old = base.get(name, {})
-              new = current.get(name, {})
-              if any(old.get(k, "") != new.get(k, "") for k in ("repo", "branch", "sha", "tag")):
-                  changed.append({"name": name, "old": old, "new": new})
-          print(json.dumps(changed))
+          for name in sorted(set(published) | set(candidate)):
+              if published.get(name, "") != candidate.get(name, ""):
+                  changed.append(name)
+
+          if not changed:
+              print("# No qcom-next topic SHA changes were detected.")
+          for name in changed:
+              topic = yaml_topics.get(name, {})
+              print(f"Topic: {name}")
+              print(f"Branch: {topic.get('branch', '')}")
+              print(f"Tag: {topic.get('tag', '')}")
+              print(f"Old SHA: {published.get(name, '')}")
+              print(f"New SHA: {candidate.get(name, '')}")
+              print()
           PY
-
-          {
-            echo "# qcom-next updated topic diff"
-            echo "# Kernel-config base: ${KERNEL_CONFIG_BASE_SHA}"
-            echo "# Kernel-config merged: $(git -C $GITHUB_WORKSPACE/kernel-config rev-parse HEAD)"
-            echo
-          } > qcom-next/candidate.diff
-
-          resolve_ref() {
-            local repo="$1"
-            local tag="$2"
-            local sha="$3"
-            if [ -n "$tag" ]; then
-              if git fetch "$repo" "refs/tags/$tag:refs/tags/$tag" >/dev/null 2>&1 && \
-                 git rev-parse --quiet --verify "refs/tags/$tag^{commit}" >/dev/null; then
-                echo "refs/tags/$tag"
-                return 0
-              fi
-              echo "WARNING: tag $tag was not fetchable from $repo; falling back to SHA $sha" >&2
-            fi
-            if [ -n "$sha" ]; then
-              git rev-parse --quiet --verify "$sha^{commit}" >/dev/null || git fetch "$repo" "$sha" >/dev/null 2>&1
-              git rev-parse --quiet --verify "$sha^{commit}" >/dev/null
-              echo "$sha"
-              return 0
-            fi
-            return 1
-          }
-
-          if [ "$(jq 'length' $GITHUB_WORKSPACE/changed-topics.json)" -eq 0 ]; then
-            echo "# No qcom-next topic changes were detected." >> qcom-next/candidate.diff
-          else
-            jq -c '.[]' $GITHUB_WORKSPACE/changed-topics.json | while IFS= read -r topic; do
-              name="$(jq -r '.name' <<< "$topic")"
-              old_repo="$(jq -r '.old.repo // empty' <<< "$topic")"
-              old_tag="$(jq -r '.old.tag // empty' <<< "$topic")"
-              old_sha="$(jq -r '.old.sha // empty' <<< "$topic")"
-              new_repo="$(jq -r '.new.repo // empty' <<< "$topic")"
-              new_tag="$(jq -r '.new.tag // empty' <<< "$topic")"
-              new_sha="$(jq -r '.new.sha // empty' <<< "$topic")"
-
-              {
-                echo "# Topic: $name"
-                echo "# Old: ${old_tag:-$old_sha}"
-                echo "# New: ${new_tag:-$new_sha}"
-                echo
-              } >> qcom-next/candidate.diff
-
-              if [ -z "$old_repo" ] || [ -z "$new_repo" ]; then
-                echo "# Topic was added or removed; no old/new topic diff is available." >> qcom-next/candidate.diff
-                echo >> qcom-next/candidate.diff
-                continue
-              fi
-
-              old_ref="$(resolve_ref "$old_repo" "$old_tag" "$old_sha")"
-              new_ref="$(resolve_ref "$new_repo" "$new_tag" "$new_sha")"
-              git diff --binary --full-index --find-renames "$old_ref" "$new_ref" >> qcom-next/candidate.diff
-              echo >> qcom-next/candidate.diff
-            done
-          fi
-
-          $GITHUB_WORKSPACE/automerge/log-parser.sh $GITHUB_WORKSPACE/merge.log
-          cp topic_SHA1 qcom-next
           cp ../merge.log qcom-next/
           sed -i 's/\r$//' qcom-next/merge.log
           sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
