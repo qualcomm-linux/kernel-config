@@ -394,8 +394,12 @@ jobs:
           if [ "$failed" -ne 0 ]; then
             {
               echo ""
-              echo "#### Failure summary"
+              echo "<details>"
+              echo "<summary>Failure summary</summary>"
+              echo ""
               cat "$details_file"
+              echo ""
+              echo "</details>"
             } >> "$summary_file"
             echo "qcom-next result: failed"
           else
