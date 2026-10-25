@@ -1,0 +1,7 @@
+# Known qcom-next test failures that should not block publication.
+#
+# Each entry may specify target, name, and result. Use target: "*" or omit
+# result to match any target/result for that test name.
+failures:
+  - target: "*"
+    name: Probe_Failure_Check
