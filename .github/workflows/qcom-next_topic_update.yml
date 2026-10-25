@@ -49,6 +49,7 @@ jobs:
     outputs:
       ref: ${{ steps.push.outputs.ref }}
       sha: ${{ steps.push.outputs.sha }}
+      prs_json: ${{ steps.merge_prs.outputs.prs_json }}
     steps:
       - name: Checkout kernel-config
         uses: actions/checkout@v4
@@ -277,7 +278,7 @@ jobs:
   test-results:
     name: Evaluate qcom-next test results
     if: always()
-    needs: [premerge, yocto]
+    needs: [candidate, premerge, yocto]
     runs-on: ubuntu-latest
     steps:
       - name: Download LAVA result artifacts
@@ -288,7 +289,8 @@ jobs:
           path: lava-results
           merge-multiple: true
 
-      - name: Check test results
+      - name: Generate test result summary
+        id: result_summary
         shell: bash
         run: |
           set -euo pipefail
@@ -296,53 +298,163 @@ jobs:
 
           files=(lava-results/*.json)
           failed=0
+          failure_count=0
+          summary_file="${RUNNER_TEMP}/qcom-next-failure-summary.md"
+          details_file="${RUNNER_TEMP}/qcom-next-failure-details.md"
+          : > "$details_file"
+
+          append_failure() {
+            printf -- '- %s\n' "$1" >> "$details_file"
+            failure_count=$((failure_count + 1))
+          }
 
           {
             echo "### qcom-next test result"
             echo ""
             echo "| Gate | Workflow result |"
             echo "| --- | --- |"
+            echo "| candidate | ${{ needs.candidate.result }} |"
             echo "| pre_merge | ${{ needs.premerge.result }} |"
             echo "| pre_merge_yocto | ${{ needs.yocto.result }} |"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "${{ needs.premerge.result }}" != "success" ] || [ "${{ needs.yocto.result }}" != "success" ]; then
+          {
+            echo "<!-- qcom-next-test-results -->"
+            echo "### qcom-next test results"
+            echo ""
+            echo "Workflow run: [${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo ""
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| candidate | ${{ needs.candidate.result }} |"
+            echo "| pre_merge | ${{ needs.premerge.result }} |"
+            echo "| pre_merge_yocto | ${{ needs.yocto.result }} |"
+            echo ""
+          } > "$summary_file"
+
+          if [ "${{ needs.candidate.result }}" != "success" ] || [ "${{ needs.premerge.result }}" != "success" ] || [ "${{ needs.yocto.result }}" != "success" ]; then
             failed=1
+          fi
+
+          if [ "${{ needs.candidate.result }}" != "success" ]; then
+            append_failure "\`candidate\` workflow completed with \`${{ needs.candidate.result }}\`."
+          fi
+
+          if [ "${{ needs.premerge.result }}" != "success" ]; then
+            append_failure "\`pre_merge\` workflow completed with \`${{ needs.premerge.result }}\`."
+          fi
+
+          if [ "${{ needs.yocto.result }}" != "success" ]; then
+            append_failure "\`pre_merge_yocto\` workflow completed with \`${{ needs.yocto.result }}\`."
           fi
 
           if [ ${#files[@]} -eq 0 ]; then
             echo "No LAVA result JSON artifacts were found." >> "$GITHUB_STEP_SUMMARY"
             echo "::error title=qcom-next::No LAVA result JSON artifacts were found"
-            exit 1
+            append_failure "No LAVA result JSON artifacts were found."
+            failed=1
+          else
+            {
+              echo "| Target | Pass | Non-pass | Total |"
+              echo "| --- | :---: | :---: | :---: |"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            {
+              echo "| Target | Pass | Non-pass | Total |"
+              echo "| --- | :---: | :---: | :---: |"
+            } >> "$summary_file"
+
+            for file in "${files[@]}"; do
+              target="$(basename "$file" .json)"
+              target="${target#Tests-}"
+              total="$(jq 'length' "$file")"
+              pass="$(jq '[.[] | select(.result == "pass")] | length' "$file")"
+              non_pass="$(jq '[.[] | select(.result != "pass")] | length' "$file")"
+
+              printf '| %s | %s | %s | %s |\n' "$target" "$pass" "$non_pass" "$total" >> "$GITHUB_STEP_SUMMARY"
+              printf '| %s | %s | %s | %s |\n' "$target" "$pass" "$non_pass" "$total" >> "$summary_file"
+
+              if [ "$total" -eq 0 ]; then
+                failed=1
+                append_failure "\`${target}\` result artifact is empty."
+              fi
+
+              if [ "$non_pass" -ne 0 ]; then
+                failed=1
+                while IFS=$'\t' read -r test_name result; do
+                  [ -n "$test_name" ] || continue
+                  append_failure "\`${target}\`: \`${test_name}\` => \`${result}\`."
+                  printf '::error title=qcom-next::%s: %s => %s\n' "$target" "$test_name" "$result"
+                done < <(jq -r '.[] | select(.result != "pass") | [.name, .result] | @tsv' "$file")
+              fi
+            done
           fi
-
-          {
-            echo "| Target | Pass | Non-pass | Total |"
-            echo "| --- | :---: | :---: | :---: |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          for file in "${files[@]}"; do
-            target="$(basename "$file" .json)"
-            target="${target#Tests-}"
-            total="$(jq 'length' "$file")"
-            pass="$(jq '[.[] | select(.result == "pass")] | length' "$file")"
-            non_pass="$(jq '[.[] | select(.result != "pass")] | length' "$file")"
-
-            printf '| %s | %s | %s | %s |\n' "$target" "$pass" "$non_pass" "$total" >> "$GITHUB_STEP_SUMMARY"
-
-            if [ "$total" -eq 0 ] || [ "$non_pass" -ne 0 ]; then
-              failed=1
-              jq -r --arg target "$target" '.[] | select(.result != "pass") | "::error title=qcom-next::\($target): \(.name) => \(.result)"' "$file"
-            fi
-          done
 
           if [ "$failed" -ne 0 ]; then
+            {
+              echo ""
+              echo "#### Failure summary"
+              cat "$details_file"
+            } >> "$summary_file"
             echo "qcom-next result: failed"
-            exit 1
+          else
+            echo "qcom-next result: passed"
           fi
 
-          echo "qcom-next result: passed"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Post failure summary on PRs
+        if: steps.result_summary.outputs.failed == '1'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          PRS_JSON: ${{ needs.candidate.outputs.prs_json }}
+          SUMMARY_FILE: ${{ runner.temp }}/qcom-next-failure-summary.md
+        with:
+          github-token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          script: |
+            const fs = require('fs');
+
+            const prsRaw = process.env.PRS_JSON || '';
+            if (!prsRaw) {
+              core.warning('No kernel-config PR list was available; skipping PR failure summary comment.');
+              return;
+            }
+
+            const prs = JSON.parse(prsRaw);
+            const body = fs.readFileSync(process.env.SUMMARY_FILE, 'utf8');
+            const marker = '<!-- qcom-next-test-results -->';
+
+            for (const pr of prs) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+            }
+
+      - name: Fail qcom-next test results
+        if: steps.result_summary.outputs.failed == '1'
+        run: exit 1
 
   publish:
     name: Publish qcom-next
