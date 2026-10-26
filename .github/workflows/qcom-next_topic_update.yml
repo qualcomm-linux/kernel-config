@@ -509,32 +509,14 @@ jobs:
 
             const prs = JSON.parse(prsRaw);
             const body = fs.readFileSync(process.env.SUMMARY_FILE, 'utf8');
-            const marker = '<!-- qcom-next-test-results -->';
 
             for (const pr of prs) {
-              const comments = await github.paginate(github.rest.issues.listComments, {
+              await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
-                per_page: 100,
+                body,
               });
-              const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
-
-              if (existing) {
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: existing.id,
-                  body,
-                });
-              } else {
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr.number,
-                  body,
-                });
-              }
             }
 
       - name: Fail qcom-next test results
