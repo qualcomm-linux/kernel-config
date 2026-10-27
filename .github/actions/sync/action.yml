@@ -291,6 +291,8 @@ runs:
 
         echo "Using qcom-next.yaml with these topic overrides:"
         jq . "$GITHUB_WORKSPACE/topic-override-shas.json"
+        echo "Generated qcom-next-pr.yaml:"
+        cat "$config_out"
 
     - name: Run auto merge
       id: automerge
