@@ -125,17 +125,104 @@ jobs:
         run: |
           set -euo pipefail
           cd $GITHUB_WORKSPACE/kernel-topics
+
           mkdir qcom-next
           $GITHUB_WORKSPACE/automerge/log-parser.sh $GITHUB_WORKSPACE/merge.log
           cp topic_SHA1 qcom-next
+
+          published_sha=""
+          if git fetch origin +refs/heads/qcom-next:refs/remotes/origin/qcom-next >/dev/null 2>&1; then
+            published_sha="$(git rev-parse refs/remotes/origin/qcom-next)"
+            git show refs/remotes/origin/qcom-next:qcom-next/topic_SHA1 > $GITHUB_WORKSPACE/published-topic_SHA1 2>/dev/null || true
+          fi
+          export PUBLISHED_SHA="$published_sha"
+          export CANDIDATE_SHA="$(git rev-parse refs/heads/qcom-next)"
+
+          python3 <<'PY' > qcom-next/candidate.diff
+          import os
+
+          workspace = os.environ["GITHUB_WORKSPACE"]
+
+          def clean(value):
+              value = value.strip()
+              if value == "null":
+                  return ""
+              if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                  value = value[1:-1]
+              return value
+
+          def load_yaml_topics(path):
+              topics = {}
+              current = None
+              in_topics = False
+              with open(path, encoding="utf-8") as f:
+                  for raw in f:
+                      line = raw.rstrip("\n")
+                      stripped = line.strip()
+                      if not stripped or stripped.startswith("#"):
+                          continue
+                      if stripped == "topics:":
+                          in_topics = True
+                          continue
+                      if not in_topics:
+                          continue
+                      if stripped.startswith("- name:"):
+                          if current and current.get("name"):
+                              topics[current["name"]] = current
+                          current = {"name": clean(stripped.split(":", 1)[1])}
+                          continue
+                      if current and ":" in stripped:
+                          key, value = stripped.split(":", 1)
+                          if key in {"repo", "branch", "sha", "tag"}:
+                              current[key] = clean(value)
+              if current and current.get("name"):
+                  topics[current["name"]] = current
+              return topics
+
+          def load_topic_sha1(path):
+              topics = {}
+              if not os.path.exists(path):
+                  return topics
+              with open(path, encoding="utf-8") as f:
+                  for raw in f:
+                      fields = raw.split()
+                      if len(fields) >= 2 and fields[1].lower() != "sha" and set(fields[0]) != {"-"}:
+                          topics[fields[0]] = fields[1]
+              return topics
+
+          yaml_topics = load_yaml_topics(workspace + "/kernel-config/qcom-next.yaml")
+          published = load_topic_sha1(workspace + "/published-topic_SHA1")
+          candidate = load_topic_sha1("topic_SHA1")
+
+          print("# qcom-next updated topics")
+          print(f"# Published qcom-next: {os.environ.get('PUBLISHED_SHA') or 'unavailable'}")
+          print(f"# Candidate qcom-next: {os.environ.get('CANDIDATE_SHA') or 'unavailable'}")
+          print()
+
+          changed = []
+          for name in sorted(set(published) | set(candidate)):
+              if published.get(name, "") != candidate.get(name, ""):
+                  changed.append(name)
+
+          if not changed:
+              print("# No qcom-next topic SHA changes were detected.")
+          for name in changed:
+              topic = yaml_topics.get(name, {})
+              print(f"Topic: {name}")
+              print(f"Branch: {topic.get('branch', '')}")
+              print(f"Tag: {topic.get('tag', '')}")
+              print(f"Old SHA: {published.get(name, '')}")
+              print(f"New SHA: {candidate.get(name, '')}")
+              print()
+          PY
           cp ../merge.log qcom-next/
           sed -i 's/\r$//' qcom-next/merge.log
           sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
           sed -i -E 's#https://[^/@[:space:]]+@github\.com/#https://***@github.com/#g' qcom-next/merge.log
           git config user.email "sgaud@qti.qualcomm.com"
           git config user.name  "Salendarsingh Gaud"
-          git add qcom-next/merge.log qcom-next/topic_SHA1
-          git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s
+          git add qcom-next/candidate.diff qcom-next/merge.log qcom-next/topic_SHA1
+          git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Add merge log, topic_SHA1, and candidate diff files." -s
 
       - name: Push the candidate
         id: push
@@ -252,6 +339,7 @@ jobs:
             kernel-config/qcom-next-known-failures.yaml
             kernel-topics/qcom-next/merge.log
             kernel-topics/qcom-next/topic_SHA1
+            kernel-topics/qcom-next/candidate.diff
           if-no-files-found: warn
           retention-days: 14
 
