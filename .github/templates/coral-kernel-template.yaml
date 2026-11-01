@@ -134,6 +134,18 @@ on:
               - type: required
                 message: Yocto Build generation Workflow ID
 
+      workflow.topic_promotion.id:
+        type: number
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Number
+            label: Workflow for topic promotion PR
+            description: ID of the Workflow for topic promotion PR
+            rules:
+              - type: required
+                message: Workflow for topic promotion PR
+
       labels:
         type: string
         coral.actions/metadata:
@@ -234,6 +246,24 @@ jobs:
               PATH: /bin/gh-utils:/usr/local/bin:/usr/bin:/bin
 
     steps:
+      - name: qcom-next_topic_update_manual
+        if: ${{ inputs.workflow.topic_promotion.id != 0 }}
+        run: |
+          printenv
+          uuid=$(openssl rand -hex 16)
+          mkdir $uuid && cd $uuid
+          echo ${{ inputs.changeSpec }} | base64 -d > changeSpec.json
+          cp /bin/gh-utils/run_gh_action.sh script.sh
+          chmod +x script.sh
+          WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
+          WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
+          JSON_CHANGE_SPEC=changeSpec.json \
+          WORKFLOW_ID=${{ inputs.workflow.topic_promotion.id }} \
+          ./script.sh
+          rm -rf $uuid
+        coral.actions/expected-exit-codes: [0]
+
       - name: email-checker
         run: |
           printenv
