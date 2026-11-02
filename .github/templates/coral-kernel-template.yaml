@@ -47,6 +47,18 @@ on:
               - type: required
                 message: GitHub Workflow Repository Name is required
 
+      workflow.repo.branch:
+        type: string
+        required: true
+        coral.actions/metadata:
+          ui-annotations:
+            type: Text
+            label: GitHub Branch name
+            description: GitHub Branch name
+            rules:
+              - type: required
+                message: GitHub Branch name
+
       workflow.email.id:
         type: number
         required: true
@@ -236,7 +248,7 @@ jobs:
     container:
       coral.actions/container:
         images:
-          - image: 019415958841.dkr.ecr.us-west-2.amazonaws.com/kernel/gh-utilities:20250619.2
+          - image: 019415958841.dkr.ecr.us-west-2.amazonaws.com/kernel/gh-utilities:20260710.1
             name: gh-utilities
             entry-point: ["/bin/bash", "-c"]
             init: false
@@ -257,6 +269,7 @@ jobs:
           chmod +x script.sh
           WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
           WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          WORKFLOW_BRANCH=${{ inputs.workflow.repo.branch}} \
           ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
           JSON_CHANGE_SPEC=changeSpec.json \
           WORKFLOW_ID=${{ inputs.workflow.topic_promotion.id }} \
