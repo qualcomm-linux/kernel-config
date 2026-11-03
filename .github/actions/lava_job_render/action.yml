@@ -25,6 +25,10 @@ inputs:
     description: "Yocto qcomflash image type: multimedia or proprietary"
     required: false
     default: multimedia
+  test_stage:
+    description: "LAVA test stage: boot or playlist"
+    required: false
+    default: playlist
 
 runs:
   using: "composite"
@@ -263,6 +267,7 @@ runs:
         FLASH_TYPE: ${{ inputs.flash_type }}
         BUILD_TYPE: ${{ inputs.build_type }}
         IMAGE_TYPE: ${{ inputs.image_type }}
+        TEST_STAGE: ${{ inputs.test_stage }}
       run: |
         cd ../job_render
         mkdir -p renders
@@ -280,23 +285,38 @@ runs:
         image_type="$(echo "$image_type" | tr '[:upper:]' '[:lower:]')"
         echo "Image type: $image_type"
 
+        test_stage="${TEST_STAGE:-playlist}"
+        test_stage="$(echo "$test_stage" | tr '[:upper:]' '[:lower:]')"
+        echo "Test stage: $test_stage"
+
+        if [[ "$test_stage" != "boot" && "$test_stage" != "playlist" ]]; then
+          echo "Invalid test_stage '$test_stage'. Allowed: boot, playlist"
+          exit 1
+        fi
+
         if [[ "$flash_type" == "fastboot" ]]; then
           export TARGET="${{ env.LAVA_NAME }}"
           export TARGET_DTB="${{ env.MACHINE }}"
           export BOOT_METHOD=fastboot
           echo "Target $TARGET"
           echo "Target DTB $TARGET_DTB"
-          python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json --qcom-next-ci-premerge
+          PLAYLIST_ARGS=""
+          if [[ "$test_stage" == "playlist" ]]; then
+            PLAYLIST_ARGS="--qcom-next-ci-premerge"
+          fi
+          python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json ${PLAYLIST_ARGS}
         elif [[ "$flash_type" == "qdl" ]]; then
           EXTRA_ARGS=""
-          if [[ "$build_type" == "yocto" ]]; then
-            if [[ "$image_type" == "proprietary" ]]; then
-              EXTRA_ARGS="--meta-qcom-nightly_config2 --meta-qcom"
+          if [[ "$test_stage" == "playlist" ]]; then
+            if [[ "$build_type" == "yocto" ]]; then
+              if [[ "$image_type" == "proprietary" ]]; then
+                EXTRA_ARGS="--meta-qcom-nightly_config2 --meta-qcom"
+              else
+                EXTRA_ARGS="--meta-qcom-nightly_config1 --meta-qcom"
+              fi
             else
-              EXTRA_ARGS="--meta-qcom-nightly_config1 --meta-qcom"
+              EXTRA_ARGS="--qcom-next-ci-premerge"
             fi
-          else
-            EXTRA_ARGS="--qcom-next-ci-premerge"
           fi
           export TARGET="${{ env.LAVA_NAME }}"
           export TARGET_DTB="${{ env.MACHINE }}"
