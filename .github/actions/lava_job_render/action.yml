@@ -326,30 +326,31 @@ runs:
           python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json ${EXTRA_ARGS}
 
           if [[ "$test_stage" == "boot" ]]; then
-            python3 <<'PY'
-          from pathlib import Path
+            cat > fix-qdl-boot-render.py <<'PY'
+        from pathlib import Path
 
-          path = Path("renders/lava_job_definition.yaml")
-          text = path.read_text()
-          text = text.replace(
-              "      test:\n"
-              "        headers:\n"
-              "          Authorization: LAVA_BASIC_AUTH\n"
-              "        url: 'https://storage-lava-hyd.qualcomm.com/Test_binaries.tar.gz'\n",
-              "",
-          )
-          text = text.replace(
-              "        - export IMAGE_PATH=$PWD\n"
-              "        - cp overlay*.tar.gz overlay.tar.gz\n"
-              "        - mkdir overlay_root\n"
-              "        - tar -xzvf overlay.tar.gz -C overlay_root\n"
-              "        - tar -xzvf Test_binaries.tar.gz -C overlay_root \n"
-              "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
-              "        - export IMAGE_PATH=$PWD\n"
-              "        - mkdir -p overlay_root\n"
-              "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
-          )
-          path.write_text(text)
-          PY
+        path = Path("renders/lava_job_definition.yaml")
+        text = path.read_text()
+        text = text.replace(
+            "      test:\n"
+            "        headers:\n"
+            "          Authorization: LAVA_BASIC_AUTH\n"
+            "        url: 'https://storage-lava-hyd.qualcomm.com/Test_binaries.tar.gz'\n",
+            "",
+        )
+        text = text.replace(
+            "        - export IMAGE_PATH=$PWD\n"
+            "        - cp overlay*.tar.gz overlay.tar.gz\n"
+            "        - mkdir overlay_root\n"
+            "        - tar -xzvf overlay.tar.gz -C overlay_root\n"
+            "        - tar -xzvf Test_binaries.tar.gz -C overlay_root \n"
+            "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
+            "        - export IMAGE_PATH=$PWD\n"
+            "        - mkdir -p overlay_root\n"
+            "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
+        )
+        path.write_text(text)
+        PY
+            python3 fix-qdl-boot-render.py
           fi
         fi
