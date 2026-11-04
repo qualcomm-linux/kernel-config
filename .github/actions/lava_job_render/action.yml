@@ -327,28 +327,39 @@ runs:
 
           if [[ "$test_stage" == "boot" ]]; then
             cat > fix-qdl-boot-render.py <<'PY'
+        import re
+        import sys
         from pathlib import Path
 
         path = Path("renders/lava_job_definition.yaml")
         text = path.read_text()
-        text = text.replace(
-            "      test:\n"
-            "        headers:\n"
-            "          Authorization: LAVA_BASIC_AUTH\n"
-            "        url: 'https://storage-lava-hyd.qualcomm.com/Test_binaries.tar.gz'\n",
+        text, test_count = re.subn(
+            r"\n      test:\n"
+            r"        headers:\n"
+            r"          Authorization: LAVA_BASIC_AUTH\n"
+            r"        url: ['\"]?https://storage-lava-hyd\.qualcomm\.com/Test_binaries\.tar\.gz['\"]?\n",
             "",
+            text,
         )
-        text = text.replace(
-            "        - export IMAGE_PATH=$PWD\n"
-            "        - cp overlay*.tar.gz overlay.tar.gz\n"
-            "        - mkdir overlay_root\n"
-            "        - tar -xzvf overlay.tar.gz -C overlay_root\n"
-            "        - tar -xzvf Test_binaries.tar.gz -C overlay_root \n"
-            "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
+        text, post_count = re.subn(
+            r"        - export IMAGE_PATH=\$PWD\n"
+            r"        - cp overlay\*\.tar\.gz overlay\.tar\.gz\n"
+            r"        - mkdir overlay_root\n"
+            r"        - tar -xzvf overlay\.tar\.gz -C overlay_root\n"
+            r"        - tar -xzvf Test_binaries\.tar\.gz -C overlay_root\s*\n"
+            r"        - tar -cvzf overlay\.tar\.gz -C overlay_root \.\n",
             "        - export IMAGE_PATH=$PWD\n"
             "        - mkdir -p overlay_root\n"
             "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
+            text,
         )
+        if test_count != 1 or post_count != 1:
+            print(
+                f"ERROR: QDL boot render rewrite failed "
+                f"(test_count={test_count}, post_count={post_count})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         path.write_text(text)
         PY
             python3 fix-qdl-boot-render.py
