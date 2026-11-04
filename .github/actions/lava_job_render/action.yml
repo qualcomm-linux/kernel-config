@@ -338,7 +338,7 @@ runs:
             r"        headers:\n"
             r"          Authorization: LAVA_BASIC_AUTH\n"
             r"        url: ['\"]?https://storage-lava-hyd\.qualcomm\.com/Test_binaries\.tar\.gz['\"]?\n",
-            "",
+            "\n",
             text,
         )
         text, post_count = re.subn(
@@ -360,6 +360,11 @@ runs:
                 file=sys.stderr,
             )
             sys.exit(1)
+        def quote_url(match):
+            prefix, url = match.groups()
+            return f"{prefix}'{url.replace(chr(39), chr(39) + chr(39))}'"
+
+        text = re.sub(r"^(\s+url:\s+)(https?://[^\n'\"].*)$", quote_url, text, flags=re.M)
         path.write_text(text)
         PY
             python3 fix-qdl-boot-render.py
