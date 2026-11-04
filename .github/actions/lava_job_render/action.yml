@@ -341,22 +341,40 @@ runs:
             "\n",
             text,
         )
-        text, post_count = re.subn(
-            r"        - export IMAGE_PATH=\$PWD\n"
-            r"        - cp overlay\*\.tar\.gz overlay\.tar\.gz\n"
-            r"        - mkdir overlay_root\n"
-            r"        - tar -xzvf overlay\.tar\.gz -C overlay_root\n"
-            r"        - tar -xzvf Test_binaries\.tar\.gz -C overlay_root\s*\n"
-            r"        - tar -cvzf overlay\.tar\.gz -C overlay_root \.\n",
-            "        - export IMAGE_PATH=$PWD\n"
-            "        - mkdir -p overlay_root\n"
-            "        - tar -cvzf overlay.tar.gz -C overlay_root .\n",
+        overlay_commands = {
+            "cp overlay*.tar.gz overlay.tar.gz",
+            "mkdir overlay_root",
+            "tar -xzvf overlay.tar.gz -C overlay_root",
+            "tar -xzvf Test_binaries.tar.gz -C overlay_root",
+            "tar -cvzf overlay.tar.gz -C overlay_root .",
+            'echo "OVERLAY=overlay.tar.gz" >> $IMAGE_PATH/flash.settings',
+            'echo "OVERLAY_PATH=/" >> $IMAGE_PATH/flash.settings',
+        }
+        filtered_lines = []
+        overlay_step_count = 0
+        for line in text.splitlines(keepends=True):
+            stripped = line.strip()
+            if stripped.startswith("- "):
+                command = stripped[2:].strip()
+                if command.startswith("'") and command.endswith("'"):
+                    command = command[1:-1].strip()
+                if command in overlay_commands:
+                    overlay_step_count += 1
+                    continue
+            filtered_lines.append(line)
+        text = "".join(filtered_lines)
+        text, overlay_image_count = re.subn(
+            r"      overlay:\n"
+            r"        url: downloads://overlay\.tar\.gz\n",
+            "",
             text,
         )
-        if test_count != 1 or post_count != 1:
+        if test_count != 1 or overlay_step_count != 7 or overlay_image_count != 1:
             print(
                 f"ERROR: QDL boot render rewrite failed "
-                f"(test_count={test_count}, post_count={post_count})",
+                f"(test_count={test_count}, "
+                f"overlay_step_count={overlay_step_count}, "
+                f"overlay_image_count={overlay_image_count})",
                 file=sys.stderr,
             )
             sys.exit(1)
