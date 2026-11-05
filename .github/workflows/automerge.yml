@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           cd $GITHUB_WORKSPACE/kernel-topics
           test -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf
-          $GITHUB_WORKSPACE/automerge/ci-merge -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n -p | tee $GITHUB_WORKSPACE/merge.log
+          $GITHUB_WORKSPACE/automerge/ci-merge -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n | tee $GITHUB_WORKSPACE/merge.log
 
       - name: Parse and Add logs
         run: |
