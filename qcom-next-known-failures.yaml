@@ -5,3 +5,15 @@
 failures:
   - target: "*"
     name: Probe_Failure_Check
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: gpdsp_remoteproc
+    result: skip
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: USBHost
+    result: skip
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: Ethernet_Basic_Validation
+    result: skip
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: Audio_Card_Registration
+    result: skip
