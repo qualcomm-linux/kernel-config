@@ -38,6 +38,36 @@ failures:
   - target: yocto-qcs6490-rb3gen2-multimedia
     name: KVM_Runtime_Validation
     result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: gpdsp_remoteproc
+    result: skip
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: kaslr
+    result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: PCIe
+    result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: USBHost
+    result: skip
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: Ethernet_Basic_Validation
+    result: skip
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: Audio_Card_Registration
+    result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: KVM_Driver
+    result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: KVM_EL2_DTB
+    result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: KVM_Infra
+    result: fail
+  - target: kbdev-qcs6490-rb3gen2-multimedia
+    name: KVM_Runtime_Validation
+    result: fail
   - target: yocto-lemans-evk-multimedia
     name: smmu
     result: fail
@@ -54,5 +84,26 @@ failures:
     name: KVM_Infra
     result: fail
   - target: yocto-lemans-evk-multimedia
+    name: KVM_Runtime_Validation
+    result: fail
+  - target: kbdev-lemans-evk-multimedia
+    name: kaslr
+    result: fail
+  - target: kbdev-lemans-evk-multimedia
+    name: USBHost
+    result: fail
+  - target: kbdev-lemans-evk-multimedia
+    name: Ethernet_Basic_Validation
+    result: skip
+  - target: kbdev-lemans-evk-multimedia
+    name: KVM_Driver
+    result: fail
+  - target: kbdev-lemans-evk-multimedia
+    name: KVM_EL2_DTB
+    result: fail
+  - target: kbdev-lemans-evk-multimedia
+    name: KVM_Infra
+    result: fail
+  - target: kbdev-lemans-evk-multimedia
     name: KVM_Runtime_Validation
     result: fail
