@@ -106,4 +106,6 @@ failures:
     result: fail
   - target: kbdev-lemans-evk-multimedia
     name: KVM_Runtime_Validation
+  - target: yocto-lemans-evk-multimedia
+    name: smmu
     result: fail
