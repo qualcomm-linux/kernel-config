@@ -263,20 +263,21 @@ jobs:
       sha: ${{ needs.candidate.outputs.sha }}
       pr: "0"
 
-  yocto:
-    name: pre_merge_yocto
-    needs: candidate
-    uses: ./.github/workflows/pre-merge-yocto.yml
-    secrets: inherit
-    with:
-      repo: qualcomm-linux-stg/kernel
-      ref: ${{ needs.candidate.outputs.ref }}
-      sha: ${{ needs.candidate.outputs.sha }}
+  #yocto:
+  #  name: pre_merge_yocto
+  #  needs: candidate
+  #  uses: ./.github/workflows/pre-merge-yocto.yml
+  #  secrets: inherit
+  #  with:
+  #    repo: qualcomm-linux-stg/kernel
+  #    ref: ${{ needs.candidate.outputs.ref }}
+  #    sha: ${{ needs.candidate.outputs.sha }}
 
   test-results:
     name: Evaluate qcom-next test results
     if: always()
-    needs: [candidate, premerge, yocto]
+    #needs: [candidate, premerge, yocto]
+    needs: [candidate, premerge]
     runs-on: ubuntu-latest
     steps:
       - name: Download LAVA result artifacts

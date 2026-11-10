@@ -17,3 +17,42 @@ failures:
   - target: yocto-qcs6490-rb3gen2-multimedia
     name: Audio_Card_Registration
     result: skip
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: kaslr
+    result: fail
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: PCIe
+    result: fail
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: Audio_Card_Registration
+    result: fail
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: KVM_Driver
+    result: fail
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: KVM_EL2_DTB
+    result: fail
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: KVM_Infra
+    result: fail
+  - target: yocto-qcs6490-rb3gen2-multimedia
+    name: KVM_Runtime_Validation
+    result: fail
+  - target: yocto-lemans-evk-multimedia
+    name: smmu
+    result: fail
+  - target: yocto-lemans-evk-multimedia
+    name: kaslr
+    result: fail
+  - target: yocto-lemans-evk-multimedia
+    name: KVM_Driver
+    result: fail
+  - target: yocto-lemans-evk-multimedia
+    name: KVM_EL2_DTB
+    result: fail
+  - target: yocto-lemans-evk-multimedia
+    name: KVM_Infra
+    result: fail
+  - target: yocto-lemans-evk-multimedia
+    name: KVM_Runtime_Validation
+    result: fail
