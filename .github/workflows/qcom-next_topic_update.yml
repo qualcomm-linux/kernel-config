@@ -23,12 +23,6 @@ permissions:
   issues: write
   pull-requests: write
 
-concurrency:
-  # qcom-next candidate generation updates shared refs/cache state, so serialize
-  # all automatic and manual invocations instead of canceling in-flight runs.
-  group: qcom-next-topic-update
-  cancel-in-progress: false
-
 env:
   # Candidates live in the staging kernel repo for validation before publish.
   KERNEL_REPO: qualcomm-linux-stg/kernel
@@ -42,6 +36,9 @@ jobs:
     runs-on:
       group: GHA-Kernel-SelfHosted-RG
       labels: [self-hosted, kernel-prd-u2404-x64-large-od-ephem]
+    # Configure this environment with required integrator reviewers. Each run
+    # stays pending for approval instead of GitHub concurrency replacing it.
+    environment: qcom-next-integration
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
