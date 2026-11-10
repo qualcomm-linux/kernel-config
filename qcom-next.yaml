@@ -7,8 +7,8 @@ topics:
   - name: tech/bsp/clk
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/bsp/clk
-    sha: 8fbbeee4302f246ab9bd3ddc44fcb78c1cc4a4a2
-    tag: tech/bsp/clk-7.3-rc1-20261022
+    sha: 8fbbeee4302f246ab9bd3ddc44fcb78c1cc4a4a5
+    tag: tech/bsp/clk-7.3-rc1-20261024
   - name: tech/bsp/devfreq
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/bsp/devfreq
