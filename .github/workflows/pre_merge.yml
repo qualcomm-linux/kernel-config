@@ -155,6 +155,33 @@ jobs:
           known_failures_file: pre-merge-known-failures.yaml
           branch: ${{ inputs.ref }}
 
+      - name: Post known failure summary on PR
+        if: inputs.pr != '' && inputs.pr != '0' && steps.result_summary.outputs.has_failures == '1'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr }}
+          TARGET_REPO: ${{ inputs.repo }}
+          SUMMARY_FILE: ${{ steps.result_summary.outputs.summary_file }}
+        with:
+          github-token: ${{ secrets.PAT || github.token }}
+          script: |
+            const fs = require('fs');
+
+            const [owner, repo] = process.env.TARGET_REPO.split('/');
+            if (!owner || !repo) {
+              core.setFailed(`Invalid target repository: ${process.env.TARGET_REPO}`);
+              return;
+            }
+
+            const body = fs.readFileSync(process.env.SUMMARY_FILE, 'utf8');
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: Number(process.env.PR_NUMBER),
+              body,
+            });
+
       - name: Fail on unexpected failures
         if: steps.result_summary.outputs.failed == '1'
         run: exit 1
