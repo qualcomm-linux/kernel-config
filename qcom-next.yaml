@@ -1,7 +1,7 @@
 baseline:
   repo: "https://github.com/qualcomm-linux-stg/kernel.git"
-  tag: v7.3-rc6
-  sha: a90ee4305c4a5df72c11b31dacfdc76e00fcf78a
+  tag: v7.3
+  sha: c03c1a14507dfaf8b856c2608f9ac216021fc222 
 
 topics:
   - name: tech/bsp/clk
@@ -32,8 +32,8 @@ topics:
   - name: tech/bsp/soc-infra
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/bsp/soc-infra
-    sha: 3633b44cc241cc8e03dae3b09be0817c3bac9c4f
-    tag: tech/bsp/soc-infra-7.2-rc1-20261024
+    sha: dbf8f4dbf8f8f7101bd4c33eeb2bccb9bb94a98c
+    tag: null
   - name: tech/bsp/pinctrl
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/bsp/pinctrl
@@ -77,8 +77,8 @@ topics:
   - name: tech/mem/dma-buf
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/mem/dma-buf
-    sha: f153776ee5585e03809e3820c09f2ae8a1ec67d9
-    tag: tech/mem/dma-buf-7.3-rc4-20261024
+    sha: 904162786ccb989185c52e85d90fe2bf41cbf41b
+    tag: null
   - name: tech/mem/iommu
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/mem/iommu
@@ -127,8 +127,8 @@ topics:
   - name: tech/net/bluetooth
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/net/bluetooth
-    sha: e352848cad1444a9125ebad6768024cc8a9cc0c4
-    tag: tech/net/bluetooth-7.3-rc1-20261024
+    sha: bf830181655ad85bb0fd7b263c55d8e7cdce709e
+    tag: null
   - name: tech/pm/pmdomain
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/pm/pmdomain
@@ -172,13 +172,13 @@ topics:
   - name: tech/all/dt/qcs9100
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/qcs9100
-    sha: df4f38e0ebf7edc26b43cce23131f7181cc557f2
-    tag: tech/all/dt/qcs9100-7.3-rc1-20261024
+    sha: 044fb5f181c0fe93665ef726ec4d16197a5fbb43
+    tag: tech/all/dt/qcs9100-7.3-rc1-20261024.1
   - name: tech/all/dt/qcs8300
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/qcs8300
-    sha: 6a513e3822028da35889d58dd755152132440a6b
-    tag: tech/all/dt/qcs8300-7.3-rc1-20261024
+    sha: e5c50e74ea634f5224f7299df9d16249597804be
+    tag: tech/all/dt/qcs8300-7.3-rc1-20261024.1
   - name: tech/all/dt/qcs615
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/qcs615
@@ -257,10 +257,10 @@ topics:
   - name: early/hwe/nord
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: early/hwe/nord
-    sha: 9d5b3c8bfaff6f9f913fdf01da068d2806a0ea6a
-    tag: early/hwe/nord-7.3-rc6-20261024
+    sha: 45ac4ce603fa9edb6d389b392b2b1ea0b76cc43b
+    tag: null
   - name: early/hwe/staging/nord
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: early/hwe/staging/nord
-    sha: b84ee153050a24411f1e3d1d082886e4dc97c682
-    tag: early/hwe/staging/nord-7.3-rc6-20261024
+    sha: ae3245588bed49fd16278cb0779b214d2fab3225
+    tag: null
