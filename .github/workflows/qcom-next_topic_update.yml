@@ -316,7 +316,7 @@ jobs:
           } >> "${{ steps.result_summary.outputs.summary_file }}"
 
       - name: Post test result summary on PRs
-        if: steps.result_summary.outputs.has_failures == '1' || needs.candidate.result != 'success'
+        if: always()
         continue-on-error: true
         uses: actions/github-script@v7
         env:

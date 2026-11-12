@@ -153,6 +153,46 @@ else
       done < <(jq -r '.[] | select(.result != "pass") | [.name, .result] | @tsv' "$file")
     fi
   done
+
+  targets=()
+  for file in "${files[@]}"; do
+    target="$(basename "$file" .json)"
+    targets+=("${target#Tests-}")
+  done
+
+  {
+    echo ""
+    echo "## Test Matrix"
+    echo ""
+    printf "| Test Case "
+    for target in "${targets[@]}"; do
+      printf "| %s " "$target"
+    done
+    printf "|\n"
+
+    printf "| --- "
+    for _ in "${targets[@]}"; do
+      printf "| :---: "
+    done
+    printf "|\n"
+
+    while IFS= read -r test_name; do
+      [ -n "$test_name" ] || continue
+      printf "| %s " "$test_name"
+      for file in "${files[@]}"; do
+        result="$(jq -r --arg name "$test_name" 'first(.[] | select(.name == $name) | .result) // ""' "$file")"
+        case "$result" in
+          pass) cell="Pass" ;;
+          fail) cell="Fail" ;;
+          skip) cell="Skip" ;;
+          error) cell="Error" ;;
+          *) cell="-" ;;
+        esac
+        printf "| %s " "$cell"
+      done
+      printf "|\n"
+    done < <(jq -r '.[].name' "${files[@]}" | sort -u)
+  } >> "$summary_file"
 fi
 
 if [ -s "$known_failure_details_file" ] || [ -s "$unexpected_details_file" ]; then
