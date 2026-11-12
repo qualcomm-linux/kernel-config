@@ -25,6 +25,11 @@ on:
         type: string
         required: false
         default: ""
+      evaluate_results:
+        description: Evaluate LAVA results in this workflow. Disable when caller evaluates results separately.
+        type: boolean
+        required: false
+        default: true
   workflow_dispatch:
     inputs:
       pr:
@@ -49,6 +54,11 @@ on:
         type: string
         required: false
         default: ""
+      evaluate_results:
+        description: Evaluate LAVA results in this workflow. Disable when caller evaluates results separately.
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   init-status:
@@ -133,7 +143,7 @@ jobs:
 
   test-results:
     name: Evaluate pre-merge test results
-    if: always() && needs.test.result != 'skipped'
+    if: always() && inputs.evaluate_results && needs.test.result != 'skipped'
     needs: [test]
     runs-on: ubuntu-latest
     steps:

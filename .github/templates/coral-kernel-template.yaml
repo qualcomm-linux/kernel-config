@@ -304,6 +304,7 @@ jobs:
           chmod +x script.sh
           WORKFLOW_REPO_OWNER=${{ inputs.workflow.repo.owner }} \
           WORKFLOW_REPO=${{ inputs.workflow.repo.name }} \
+          WORKFLOW_BRANCH=${{ inputs.workflow.repo.branch}} \
           ACCESS_TOKEN=$(cat $GITHUB_TOKEN) \
           JSON_CHANGE_SPEC=changeSpec.json \
           WORKFLOW_ID=${{ inputs.workflow.premerge.id }} \
