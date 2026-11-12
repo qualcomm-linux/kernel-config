@@ -12,8 +12,8 @@ topics:
   - name: tech/bsp/devfreq
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/bsp/devfreq
-    sha: 0837ca4afab5ff6397284116dfad794b0b7884d4
-    tag: tech/bsp/devfreq-7.3-rc2-20261023
+    sha: 0837ca4afab5ff6397284116dfad794b0b7884d5
+    tag: tech/bsp/devfreq-7.3-rc2-20261024
   - name: tech/bsp/interconnect
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/bsp/interconnect
