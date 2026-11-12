@@ -342,7 +342,7 @@ jobs:
             }
 
       - name: Fail qcom-next test results
-        if: steps.result_summary.outputs.failed == '1' || needs.candidate.result != 'success'
+        if: steps.result_summary.outputs.failed == '1' || needs.candidate.result != 'success' || needs.premerge.result != 'success' || needs.yocto.result != 'success'
         run: exit 1
 
   publish:
