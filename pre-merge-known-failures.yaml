@@ -1,0 +1,254 @@
+# Known pre-merge test failures that should not block CI.
+#
+# Configure failures per target branch. Each entry may specify target, name, and
+# result. Use target: "*" or omit result to match any target/result for that
+# test name.
+branches:
+  qcom-6.18.y:
+    failures:
+      - target: "*"
+        name: Probe_Failure_Check
+        result: fail
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-monaco-evk-multimedia
+        name: WiFi_Firmware_Driver
+        result: fail
+      - target: kbdev-monaco-evk-multimedia
+        name: WiFi_OnOff
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-qcs615-ride-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-qcs615-ride-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-qcs615-ride-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-qcs615-ride-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-qcs615-ride-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-qcs615-ride-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: USBHost
+        result: skip
+      - target: kbdev-qcs8300-ride-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-qcs8300-ride-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: Ethernet_Basic_Validation
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: adsp_remoteproc
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: DSP_AudioPD
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: GIC
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: PCIe
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: UFS_Validation
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: USBHost
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: WiFi_OnOff
+        result: skip
+  qcom-next:
+    failures:
+      - target: "*"
+        name: Probe_Failure_Check
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: USBHost
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: Audio_Card_Registration
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: kaslr
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: PCIe
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: Audio_Card_Registration
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-multimedia
+        name: KVM_Runtime_Validation
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: kaslr
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: PCIe
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: USBHost
+        result: skip
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: Audio_Card_Registration
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-qcs6490-rb3gen2-multimedia
+        name: KVM_Runtime_Validation
+        result: fail
+      - target: yocto-lemans-evk-multimedia
+        name: smmu
+        result: fail
+      - target: yocto-lemans-evk-multimedia
+        name: kaslr
+        result: fail
+      - target: yocto-lemans-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: yocto-lemans-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: yocto-lemans-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: yocto-lemans-evk-multimedia
+        name: KVM_Runtime_Validation
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: kaslr
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: USBHost
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-lemans-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: KVM_Runtime_Validation
+      - target: yocto-lemans-evk-multimedia
+        name: smmu
+        result: fail

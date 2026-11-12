@@ -121,16 +121,71 @@ jobs:
       sha: ${{ inputs.sha }}
       repo: ${{ inputs.repo }}
 
+  test-results:
+    name: Evaluate pre-merge test results
+    if: always() && needs.test.result != 'skipped'
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+
+      - name: Download LAVA result artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: Tests-*
+          path: lava-results
+          merge-multiple: true
+
+      - name: Evaluate known failures
+        id: result_summary
+        uses: ./.github/actions/evaluate_lava_results
+        with:
+          known_failures_file: pre-merge-known-failures.yaml
+          branch: ${{ inputs.ref }}
+
+      - name: Post known failure summary on PR
+        if: inputs.pr != '' && inputs.pr != '0' && steps.result_summary.outputs.has_failures == '1'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr }}
+          TARGET_REPO: ${{ inputs.repo }}
+          SUMMARY_FILE: ${{ steps.result_summary.outputs.summary_file }}
+        with:
+          github-token: ${{ secrets.PAT || github.token }}
+          script: |
+            const fs = require('fs');
+
+            const [owner, repo] = process.env.TARGET_REPO.split('/');
+            if (!owner || !repo) {
+              core.setFailed(`Invalid target repository: ${process.env.TARGET_REPO}`);
+              return;
+            }
+
+            const body = fs.readFileSync(process.env.SUMMARY_FILE, 'utf8');
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: Number(process.env.PR_NUMBER),
+              body,
+            });
+
+      - name: Fail on unexpected failures or test workflow failure
+        if: always() && (needs.test.result != 'success' || steps.result_summary.outputs.failed == '1')
+        run: exit 1
+
   final-status:
     runs-on: ubuntu-latest
-    needs: [init-status, loading, build, test, comment]
+    needs: [init-status, loading, build, test, comment, test-results]
     if: always()
     steps:
       - name: Final workflow status
         uses: qualcomm-linux/kernel-config/.github/actions/workflow_status@main
         with:
           sha: ${{ inputs.sha }}
-          action_mode: ${{ needs.test.result != 'skipped' && needs.test.result || needs.build.result }}
+          action_mode: ${{ needs.test-results.result != 'skipped' && needs.test-results.result || (needs.test.result != 'skipped' && needs.test.result || needs.build.result) }}
           check_name: pre-merge
           repo: ${{ inputs.repo }}
           GH_TOKEN: ${{ secrets.PAT }}
