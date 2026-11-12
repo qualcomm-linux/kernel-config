@@ -162,17 +162,17 @@ else
 
   {
     echo ""
-    echo "## Test Matrix"
+    echo "# Test Matrix"
     echo ""
     printf "| Test Case "
     for target in "${targets[@]}"; do
-      printf "| %s " "$target"
+      printf "|     %s     " "$target"
     done
-    printf "|\n"
+    printf " | \n"
 
     printf "| --- "
     for _ in "${targets[@]}"; do
-      printf "| :---: "
+      printf "| ---- "
     done
     printf "|\n"
 
@@ -182,11 +182,11 @@ else
       for file in "${files[@]}"; do
         result="$(jq -r --arg name "$test_name" 'first(.[] | select(.name == $name) | .result) // ""' "$file")"
         case "$result" in
-          pass) cell="Pass" ;;
-          fail) cell="Fail" ;;
-          skip) cell="Skip" ;;
-          error) cell="Error" ;;
-          *) cell="-" ;;
+          pass) cell="✅ Pass" ;;
+          fail) cell="❌ Fail" ;;
+          skip) cell="⚠️ skip" ;;
+          error) cell="⛔ Error" ;;
+          *) cell="◻️" ;;
         esac
         printf "| %s " "$cell"
       done
