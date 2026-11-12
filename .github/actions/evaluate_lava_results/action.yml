@@ -1,0 +1,42 @@
+name: Evaluate LAVA Results
+
+description: Evaluate LAVA test JSON artifacts against a known-failures file.
+
+inputs:
+  known_failures_file:
+    description: YAML file containing known failures.
+    required: true
+  results_dir:
+    description: Directory containing Tests-*.json LAVA result artifacts.
+    required: false
+    default: lava-results
+  branch:
+    description: Optional branch name used when the known-failures YAML has branch-specific entries.
+    required: false
+    default: ""
+
+outputs:
+  failed:
+    description: "1 when unexpected failures were found, otherwise 0."
+    value: ${{ steps.evaluate.outputs.failed }}
+  has_failures:
+    description: "1 when any known or unexpected failures were observed, otherwise 0."
+    value: ${{ steps.evaluate.outputs.has_failures }}
+  summary_file:
+    description: Markdown summary file path.
+    value: ${{ steps.evaluate.outputs.summary_file }}
+  known_failure_count:
+    description: Number of configured known failures after normalization.
+    value: ${{ steps.evaluate.outputs.known_failure_count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Evaluate LAVA results
+      id: evaluate
+      shell: bash
+      env:
+        RESULTS_DIR: ${{ inputs.results_dir }}
+        KNOWN_FAILURES_FILE: ${{ inputs.known_failures_file }}
+        KNOWN_FAILURE_BRANCH: ${{ inputs.branch }}
+      run: bash "$GITHUB_ACTION_PATH/evaluate.sh"
