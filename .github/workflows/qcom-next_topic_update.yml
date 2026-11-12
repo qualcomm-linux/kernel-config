@@ -264,6 +264,7 @@ jobs:
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
       pr: "0"
+      evaluate_results: false
 
   yocto:
     name: pre_merge_yocto
