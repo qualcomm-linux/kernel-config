@@ -90,6 +90,23 @@ fi
 
 known_failure_count="$(jq 'length' "$known_failures_file")"
 
+expected_targets=()
+declare -A expected_target_set=()
+if ! jq -e 'type == "array" and all(.[]; type == "string" and length > 0)' \
+  <<< "${EXPECTED_TARGETS:-[]}" >/dev/null; then
+  append_unexpected_failure "Expected LAVA target list is invalid."
+else
+  mapfile -t expected_targets < <(jq -r '.[]' <<< "${EXPECTED_TARGETS:-[]}")
+  unique_expected_targets=()
+  for target in "${expected_targets[@]}"; do
+    if [[ -z "${expected_target_set[$target]+x}" ]]; then
+      expected_target_set["$target"]=1
+      unique_expected_targets+=("$target")
+    fi
+  done
+  expected_targets=("${unique_expected_targets[@]}")
+fi
+
 {
   echo "### Test result"
   echo ""
@@ -100,17 +117,42 @@ known_failure_count="$(jq 'length' "$known_failures_file")"
 {
   echo "### Test results"
   echo ""
-  echo "Workflow run: [${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+  echo "Workflow run: [${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT})"
   echo ""
   echo "Known failures configured: ${known_failure_count}"
   echo ""
 } > "$summary_file"
 
+declare -A result_files_by_target=()
+observed_targets=()
+for file in "${files[@]}"; do
+  target="$(basename "$file" .json)"
+  target="${target#Tests-}"
+  result_files_by_target["$target"]="$file"
+  observed_targets+=("$target")
+done
+
+targets=("${expected_targets[@]}")
+declare -A target_set=()
+for target in "${targets[@]}"; do
+  target_set["$target"]=1
+done
+for target in "${observed_targets[@]}"; do
+  if [[ -z "${target_set[$target]+x}" ]]; then
+    targets+=("$target")
+    target_set["$target"]=1
+  fi
+done
+
 if [ "${#files[@]}" -eq 0 ]; then
   echo "No LAVA result JSON artifacts were found." >> "$GITHUB_STEP_SUMMARY"
   printf '::error title=test-results::No LAVA result JSON artifacts were found\n'
-  append_unexpected_failure "No LAVA result JSON artifacts were found."
-else
+  if [ "${#targets[@]}" -eq 0 ]; then
+    append_unexpected_failure "No LAVA result JSON artifacts were found."
+  fi
+fi
+
+if [ "${#targets[@]}" -gt 0 ]; then
   {
     echo "| Target | Pass | Non-pass | Total |"
     echo "| --- | :---: | :---: | :---: |"
@@ -121,9 +163,18 @@ else
     echo "| --- | :---: | :---: | :---: |"
   } >> "$summary_file"
 
-  for file in "${files[@]}"; do
-    target="$(basename "$file" .json)"
-    target="${target#Tests-}"
+  for target in "${targets[@]}"; do
+    file="${result_files_by_target[$target]:-}"
+    if [ -z "$file" ]; then
+      printf '| %s | - | ⛔ Not submitted | - |\n' "$target" >> "$GITHUB_STEP_SUMMARY"
+      printf '| %s | - | ⛔ Not submitted | - |\n' "$target" >> "$summary_file"
+      if [[ -n "${expected_target_set[$target]+x}" ]]; then
+        append_unexpected_failure "\`${target}\` did not produce a LAVA result artifact."
+        printf '::error title=test-results::%s did not produce a LAVA result artifact\n' "$target"
+      fi
+      continue
+    fi
+
     total="$(jq 'length' "$file")"
     pass="$(jq '[.[] | select(.result == "pass")] | length' "$file")"
     non_pass="$(jq '[.[] | select(.result != "pass")] | length' "$file")"
@@ -154,12 +205,6 @@ else
     fi
   done
 
-  targets=()
-  for file in "${files[@]}"; do
-    target="$(basename "$file" .json)"
-    targets+=("${target#Tests-}")
-  done
-
   {
     echo ""
     echo "# Test Matrix"
@@ -176,22 +221,42 @@ else
     done
     printf "|\n"
 
-    while IFS= read -r test_name; do
-      [ -n "$test_name" ] || continue
-      printf "| %s " "$test_name"
-      for file in "${files[@]}"; do
-        result="$(jq -r --arg name "$test_name" 'first(.[] | select(.name == $name) | .result) // ""' "$file")"
-        case "$result" in
-          pass) cell="✅ Pass" ;;
-          fail) cell="❌ Fail" ;;
-          skip) cell="⚠️ skip" ;;
-          error) cell="⛔ Error" ;;
-          *) cell="◻️" ;;
-        esac
-        printf "| %s " "$cell"
-      done
-      printf "|\n"
-    done < <(jq -r '.[].name' "${files[@]}" | sort -u)
+    printf "| LAVA result "
+    for target in "${targets[@]}"; do
+      if [ -z "${result_files_by_target[$target]:-}" ]; then
+        cell="⛔ Not submitted"
+      else
+        cell="✅ Results"
+      fi
+      printf "| %s " "$cell"
+    done
+    printf "|\n"
+
+    if [ "${#files[@]}" -gt 0 ]; then
+      while IFS= read -r test_name; do
+        [ -n "$test_name" ] || continue
+        printf "| %s " "$test_name"
+        for target in "${targets[@]}"; do
+          file="${result_files_by_target[$target]:-}"
+          if [ -z "$file" ]; then
+            cell="⛔ Not submitted"
+            printf "| %s " "$cell"
+            continue
+          fi
+
+          result="$(jq -r --arg name "$test_name" 'first(.[] | select(.name == $name) | .result) // ""' "$file")"
+          case "$result" in
+            pass) cell="✅ Pass" ;;
+            fail) cell="❌ Fail" ;;
+            skip) cell="⚠️ skip" ;;
+            error) cell="⛔ Error" ;;
+            *) cell="◻️" ;;
+          esac
+          printf "| %s " "$cell"
+        done
+        printf "|\n"
+      done < <(jq -r '.[].name' "${files[@]}" | sort -u)
+    fi
   } >> "$summary_file"
 fi
 
