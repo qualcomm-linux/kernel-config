@@ -200,10 +200,10 @@ topics:
     sha: 7cdc1c1717ef2f890b5c1272d0822714942d4f52
     tag: tech/all/dt/hamoa-7.3-rc6-20261024
   - name: tech/all/dt/glymur
-    repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
+    repo: "https://github.com/qualcomm-linux/kernel-topics.git"
     branch: tech/all/dt/glymur
-    sha: a619ea6bd88bc2938ad9eadd3bff6df886f456c3
-    tag: tech/all/dt/glymur-7.3-rc2-20261024
+    sha: 379efd7e5e9b9cdce7b436bb528d64e5f3bbfe94
+    tag: null
   - name: tech/all/dt/kaanapali
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/kaanapali
