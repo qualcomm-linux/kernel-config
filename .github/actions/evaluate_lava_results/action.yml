@@ -14,6 +14,10 @@ inputs:
     description: Optional branch name used when the known-failures YAML has branch-specific entries.
     required: false
     default: ""
+  expected_targets:
+    description: Optional JSON array of LAVA target labels expected in the test matrix.
+    required: false
+    default: "[]"
 
 outputs:
   failed:
@@ -39,4 +43,5 @@ runs:
         RESULTS_DIR: ${{ inputs.results_dir }}
         KNOWN_FAILURES_FILE: ${{ inputs.known_failures_file }}
         KNOWN_FAILURE_BRANCH: ${{ inputs.branch }}
+        EXPECTED_TARGETS: ${{ inputs.expected_targets }}
       run: bash "$GITHUB_ACTION_PATH/evaluate.sh"

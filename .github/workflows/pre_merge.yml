@@ -121,24 +121,23 @@ jobs:
       flash_type: ""
       build_type: "kbdev"
 
-  comment:
-    needs: [test]
-    uses: ./.github/workflows/comment.yml
-    if: always() && inputs.pr != '' && inputs.pr != '0' && needs.test.result != 'skipped'
-    secrets: inherit
-    with:
-      pr_number: ${{ inputs.pr }}
-      sha: ${{ inputs.sha }}
-      repo: ${{ inputs.repo }}
-
   test-results:
     name: Evaluate pre-merge test results
     if: always() && inputs.evaluate_results && needs.test.result != 'skipped'
-    needs: [test]
+    needs: [loading, test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout kernel-config
         uses: actions/checkout@v4
+
+      - name: Build expected LAVA target list
+        id: expected_targets
+        env:
+          ROOTFS_MATRIX: ${{ needs.loading.outputs.rootfs_matrix }}
+        run: |
+          set -euo pipefail
+          targets="$(jq -c '[.[] | "kbdev-\(.machine)-multimedia"] | unique' <<< "$ROOTFS_MATRIX")"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
 
       - name: Download LAVA result artifacts
         uses: actions/download-artifact@v4
@@ -154,9 +153,10 @@ jobs:
         with:
           known_failures_file: pre-merge-known-failures.yaml
           branch: ${{ inputs.ref }}
+          expected_targets: ${{ steps.expected_targets.outputs.targets }}
 
-      - name: Post known failure summary on PR
-        if: inputs.pr != '' && inputs.pr != '0' && steps.result_summary.outputs.has_failures == '1'
+      - name: Post test result summary on PR
+        if: always() && inputs.pr != '' && inputs.pr != '0'
         continue-on-error: true
         uses: actions/github-script@v7
         env:
@@ -174,7 +174,10 @@ jobs:
               return;
             }
 
-            const body = fs.readFileSync(process.env.SUMMARY_FILE, 'utf8');
+            const summaryFile = process.env.SUMMARY_FILE;
+            const body = summaryFile && fs.existsSync(summaryFile)
+              ? fs.readFileSync(summaryFile, 'utf8')
+              : '### Test results\n\nResult evaluation did not complete; see the workflow logs.';
             await github.rest.issues.createComment({
               owner,
               repo,
@@ -188,7 +191,7 @@ jobs:
 
   final-status:
     runs-on: ubuntu-latest
-    needs: [init-status, loading, build, test, comment, test-results]
+    needs: [init-status, loading, build, test, test-results]
     if: always()
     steps:
       - name: Final workflow status
