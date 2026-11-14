@@ -18,6 +18,14 @@ inputs:
     description: Optional JSON array of LAVA target labels expected in the test matrix.
     required: false
     default: "[]"
+  summary_title:
+    description: Markdown heading used for the generated report.
+    required: false
+    default: Test results
+  summary_file_name:
+    description: Filename to use for the generated Markdown summary.
+    required: false
+    default: lava-result-summary.md
 
 outputs:
   failed:
@@ -44,4 +52,6 @@ runs:
         KNOWN_FAILURES_FILE: ${{ inputs.known_failures_file }}
         KNOWN_FAILURE_BRANCH: ${{ inputs.branch }}
         EXPECTED_TARGETS: ${{ inputs.expected_targets }}
+        SUMMARY_TITLE: ${{ inputs.summary_title }}
+        SUMMARY_FILE_NAME: ${{ inputs.summary_file_name }}
       run: bash "$GITHUB_ACTION_PATH/evaluate.sh"

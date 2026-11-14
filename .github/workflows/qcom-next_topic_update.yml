@@ -285,39 +285,108 @@ jobs:
       - name: Checkout kernel-config
         uses: actions/checkout@v4
 
-      - name: Download LAVA result artifacts
+      - name: Build expected LAVA target lists
+        id: expected_targets
+        run: |
+          set -euo pipefail
+          machines="$(jq -c '
+            [
+              .[]
+              | select(.rootfs != "" and ((.branches | not) or (.branches | index("qcom-next-staging"))))
+              | .machine
+            ]
+            | unique
+          ' ci/MACHINES.json)"
+          echo "kbdev_multimedia=$(jq -c '[.[] | "kbdev-\(.)-multimedia"]' <<< "$machines")" >> "$GITHUB_OUTPUT"
+          echo "yocto_multimedia=$(jq -c '[.[] | "yocto-\(.)-multimedia"]' <<< "$machines")" >> "$GITHUB_OUTPUT"
+          echo "yocto_proprietary=$(jq -c '[.[] | "yocto-\(.)-proprietary"]' <<< "$machines")" >> "$GITHUB_OUTPUT"
+
+      - name: Download kbdev multimedia result artifacts
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: Tests-*
-          path: lava-results
+          pattern: Tests-kbdev-*-multimedia
+          path: lava-results/kbdev-multimedia
           merge-multiple: true
 
-      - name: Generate test result summary
-        id: result_summary
+      - name: Download Yocto multimedia result artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: Tests-yocto-*-multimedia
+          path: lava-results/yocto-multimedia
+          merge-multiple: true
+
+      - name: Download Yocto proprietary result artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: Tests-yocto-*-proprietary
+          path: lava-results/yocto-proprietary
+          merge-multiple: true
+
+      - name: Generate kbdev multimedia test result summary
+        if: always()
+        id: kbdev_multimedia
         uses: ./.github/actions/evaluate_lava_results
         with:
           known_failures_file: pre-merge-known-failures.yaml
           branch: qcom-next
+          results_dir: lava-results/kbdev-multimedia
+          expected_targets: ${{ steps.expected_targets.outputs.kbdev_multimedia }}
+          summary_title: "qcom-next: kbdev multimedia test results"
+          summary_file_name: qcom-next-kbdev-multimedia.md
+
+      - name: Generate Yocto multimedia test result summary
+        if: always()
+        id: yocto_multimedia
+        uses: ./.github/actions/evaluate_lava_results
+        with:
+          known_failures_file: pre-merge-known-failures.yaml
+          branch: qcom-next
+          results_dir: lava-results/yocto-multimedia
+          expected_targets: ${{ steps.expected_targets.outputs.yocto_multimedia }}
+          summary_title: "qcom-next: Yocto multimedia test results"
+          summary_file_name: qcom-next-yocto-multimedia.md
+
+      - name: Generate Yocto proprietary test result summary
+        if: always()
+        id: yocto_proprietary
+        uses: ./.github/actions/evaluate_lava_results
+        with:
+          known_failures_file: pre-merge-known-failures.yaml
+          branch: qcom-next
+          results_dir: lava-results/yocto-proprietary
+          expected_targets: ${{ steps.expected_targets.outputs.yocto_proprietary }}
+          summary_title: "qcom-next: Yocto proprietary test results"
+          summary_file_name: qcom-next-yocto-proprietary.md
 
       - name: Mark candidate failure as unexpected
-        if: needs.candidate.result != 'success'
+        if: always() && needs.candidate.result != 'success'
+        env:
+          KBDEV_SUMMARY_FILE: ${{ steps.kbdev_multimedia.outputs.summary_file }}
+          YOCTO_MULTIMEDIA_SUMMARY_FILE: ${{ steps.yocto_multimedia.outputs.summary_file }}
+          YOCTO_PROPRIETARY_SUMMARY_FILE: ${{ steps.yocto_proprietary.outputs.summary_file }}
         run: |
-          {
-            echo ""
-            echo "#### Unexpected failures"
-            echo "- \`candidate\` workflow completed with \`${{ needs.candidate.result }}\`."
-            echo ""
-            echo "Result: blocked because unexpected failures were found."
-          } >> "${{ steps.result_summary.outputs.summary_file }}"
+          set -euo pipefail
+          for summary_file in "$KBDEV_SUMMARY_FILE" "$YOCTO_MULTIMEDIA_SUMMARY_FILE" "$YOCTO_PROPRIETARY_SUMMARY_FILE"; do
+            [ -f "$summary_file" ] || continue
+            {
+              echo ""
+              echo "#### Candidate failure"
+              echo "- \`candidate\` workflow completed with \`${{ needs.candidate.result }}\`."
+            } >> "$summary_file"
+          done
 
-      - name: Post test result summary on PRs
+      - name: Post test result summaries on PRs
         if: always()
         continue-on-error: true
         uses: actions/github-script@v7
         env:
           PRS_JSON: ${{ needs.candidate.outputs.prs_json }}
-          SUMMARY_FILE: ${{ steps.result_summary.outputs.summary_file }}
+          KBDEV_SUMMARY_FILE: ${{ steps.kbdev_multimedia.outputs.summary_file }}
+          YOCTO_MULTIMEDIA_SUMMARY_FILE: ${{ steps.yocto_multimedia.outputs.summary_file }}
+          YOCTO_PROPRIETARY_SUMMARY_FILE: ${{ steps.yocto_proprietary.outputs.summary_file }}
         with:
           github-token: ${{ secrets.PAT || secrets.SPAT || github.token }}
           script: |
@@ -330,19 +399,37 @@ jobs:
             }
 
             const prs = JSON.parse(prsRaw);
-            const body = fs.readFileSync(process.env.SUMMARY_FILE, 'utf8');
+            const reports = [
+              {
+                name: 'kbdev multimedia',
+                summaryFile: process.env.KBDEV_SUMMARY_FILE,
+              },
+              {
+                name: 'Yocto multimedia',
+                summaryFile: process.env.YOCTO_MULTIMEDIA_SUMMARY_FILE,
+              },
+              {
+                name: 'Yocto proprietary',
+                summaryFile: process.env.YOCTO_PROPRIETARY_SUMMARY_FILE,
+              },
+            ];
 
             for (const pr of prs) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body,
-              });
+              for (const report of reports) {
+                const body = report.summaryFile && fs.existsSync(report.summaryFile)
+                  ? fs.readFileSync(report.summaryFile, 'utf8')
+                  : `### qcom-next: ${report.name} test results\n\nResult evaluation did not complete; see the workflow logs.`;
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
             }
 
       - name: Fail qcom-next test results
-        if: steps.result_summary.outputs.failed == '1' || needs.candidate.result != 'success' || needs.premerge.result != 'success' || needs.yocto.result != 'success'
+        if: always() && (steps.kbdev_multimedia.outputs.failed == '1' || steps.yocto_multimedia.outputs.failed == '1' || steps.yocto_proprietary.outputs.failed == '1' || needs.candidate.result != 'success' || needs.premerge.result != 'success' || needs.yocto.result != 'success')
         run: exit 1
 
   publish:

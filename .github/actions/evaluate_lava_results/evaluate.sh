@@ -5,11 +5,12 @@ shopt -s nullglob
 files=("${RESULTS_DIR}"/*.json)
 failed=0
 has_failures=0
-summary_file="${RUNNER_TEMP}/lava-result-summary.md"
+summary_file="${RUNNER_TEMP}/${SUMMARY_FILE_NAME:-lava-result-summary.md}"
 known_failures_display_name="$(basename "$KNOWN_FAILURES_FILE")"
 known_failures_file="${RUNNER_TEMP}/known-failures.json"
 known_failure_details_file="${RUNNER_TEMP}/known-failure-details.md"
 unexpected_details_file="${RUNNER_TEMP}/unexpected-failure-details.md"
+summary_title="${SUMMARY_TITLE:-Test results}"
 : > "$known_failure_details_file"
 : > "$unexpected_details_file"
 
@@ -108,14 +109,14 @@ else
 fi
 
 {
-  echo "### Test result"
+  echo "### ${summary_title}"
   echo ""
   echo "Known failures configured: ${known_failure_count}"
   echo ""
 } >> "$GITHUB_STEP_SUMMARY"
 
 {
-  echo "### Test results"
+  echo "### ${summary_title}"
   echo ""
   echo "Workflow run: [${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT})"
   echo ""
