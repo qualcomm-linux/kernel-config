@@ -4,8 +4,8 @@ name: qcom-next promote topic
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: Topic tag to promote, for example tech/all/dt/glymur-7.3-rc2-20261024
+      tags:
+        description: Topic tags to promote, separated by commas, spaces or newlines, for example tech/all/dt/glymur-7.3-rc2-20261024
         type: string
         required: true
 permissions:
@@ -23,34 +23,54 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PAT || secrets.SPAT || github.token }}
 
-      - name: Resolve topic from tag
-        id: resolve_topic
+      - name: Resolve promotions from tags
+        id: resolve
         env:
-          TOPIC_TAG: ${{ inputs.tag }}
+          TOPIC_TAGS: ${{ inputs.tags }}
+          PROMOTIONS_FILE: ${{ runner.temp }}/promotions.json
+          PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
         run: |
           set -euo pipefail
           python3 <<'PY'
+          import hashlib
+          import json
           import os
+          import re
+          import subprocess
           import sys
 
           path = "qcom-next.yaml"
-          tag = os.environ["TOPIC_TAG"]
-          if not tag or "\n" in tag or "\r" in tag:
-              print("ERROR: tag must be a single non-empty line", file=sys.stderr)
+
+
+          def fail(message):
+              print(f"::error title=qcom-next::{message}")
               sys.exit(1)
 
-          topics = []
-          block = []
-          in_topics = False
+
+          tags = []
+          for item in re.split(r"[,\s]+", os.environ["TOPIC_TAGS"]):
+              item = item.strip()
+              if item and item not in tags:
+                  tags.append(item)
+          if not tags:
+              fail("at least one tag is required")
+
+
+          def unquote(result):
+              if len(result) >= 2 and result[0] == result[-1] and result[0] in "\"'":
+                  return result[1:-1]
+              return result
+
 
           def value(line, key):
               prefix = f"    {key}:"
               if not line.startswith(prefix):
                   return None
-              result = line[len(prefix):].strip()
-              if len(result) >= 2 and result[0] == result[-1] and result[0] in "\"'":
-                  result = result[1:-1]
-              return result
+              return unquote(line[len(prefix):].strip())
+
+
+          topics = []
+
 
           def add_topic(topic_block):
               if not topic_block:
@@ -59,24 +79,19 @@ jobs:
               for key in ("name", "repo", "branch"):
                   for line in topic_block:
                       if key == "name" and line.startswith("  - name:"):
-                          result = line[len("  - name:"):].strip()
+                          result = unquote(line[len("  - name:"):].strip())
                       else:
                           result = value(line, key)
-                      if (
-                          result is not None
-                          and len(result) >= 2
-                          and result[0] == result[-1]
-                          and result[0] in "\"'"
-                      ):
-                          result = result[1:-1]
                       if result is not None:
                           topic[key] = result
                           break
               if {"repo", "branch"} - topic.keys():
-                  print(f"ERROR: malformed topic entry: {topic}", file=sys.stderr)
-                  sys.exit(1)
+                  fail(f"malformed topic entry: {topic}")
               topics.append(topic)
 
+
+          block = []
+          in_topics = False
           with open(path, encoding="utf-8") as source:
               for line in source:
                   if line.startswith("topics:"):
@@ -91,132 +106,178 @@ jobs:
                       block.append(line)
           add_topic(block)
 
-          matches = []
-          for topic in topics:
-              for candidate in (topic.get("branch"), topic.get("name")):
-                  if candidate and tag.startswith(f"{candidate}-"):
-                      matches.append((len(candidate), topic))
 
-          if not matches:
-              print(
-                  f"ERROR: tag '{tag}' does not match a topic branch in {path}",
-                  file=sys.stderr,
+          def resolve_topic(tag):
+              matches = []
+              for topic in topics:
+                  for candidate in (topic.get("branch"), topic.get("name")):
+                      if candidate and tag.startswith(f"{candidate}-"):
+                          matches.append((len(candidate), topic))
+              if not matches:
+                  fail(f"tag '{tag}' does not match a topic branch in {path}")
+              longest = max(length for length, _ in matches)
+              selected = [topic for length, topic in matches if length == longest]
+              branches = {topic["branch"] for topic in selected}
+              if len(branches) != 1:
+                  fail(
+                      f"tag '{tag}' matches multiple topic branches: "
+                      + ", ".join(sorted(branches))
+                  )
+              return selected[0]
+
+
+          def resolve_sha(tag, repo):
+              tag_ref = f"refs/tags/{tag}"
+              if subprocess.run(
+                  ["git", "check-ref-format", tag_ref], capture_output=True
+              ).returncode:
+                  fail(f"invalid tag name: {tag}")
+
+              url = repo
+              token = os.environ.get("PUSH_TOKEN", "")
+              marker = "https://github.com/"
+              if token and url.startswith(marker):
+                  url = f"https://x-access-token:{token}@github.com/{url[len(marker):]}"
+
+              listing = subprocess.run(
+                  ["git", "ls-remote", "--tags", url, tag_ref, f"{tag_ref}^{{}}"],
+                  check=True,
+                  text=True,
+                  capture_output=True,
+              ).stdout
+
+              direct = ""
+              peeled = ""
+              for line in listing.splitlines():
+                  parts = line.split("\t")
+                  if len(parts) != 2:
+                      continue
+                  sha, ref = parts
+                  if ref == tag_ref:
+                      direct = sha
+                  elif ref == f"{tag_ref}^{{}}":
+                      peeled = sha
+
+              sha = (peeled or direct).strip().lower()
+              if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  fail(f"tag '{tag}' was not found in '{repo}'")
+              return sha
+
+
+          promotions = []
+          for tag in tags:
+              topic = resolve_topic(tag)
+              branch = topic["branch"]
+              clash = next(
+                  (item for item in promotions if item["branch"] == branch), None
               )
-              sys.exit(1)
-
-          longest = max(length for length, _ in matches)
-          topics = [topic for length, topic in matches if length == longest]
-          branches = {topic["branch"] for topic in topics}
-          if len(branches) != 1:
-              print(
-                  f"ERROR: tag '{tag}' matches multiple topic branches: "
-                  + ", ".join(sorted(branches)),
-                  file=sys.stderr,
+              if clash:
+                  fail(
+                      f"tags '{clash['tag']}' and '{tag}' both promote topic "
+                      f"'{branch}'"
+                  )
+              promotions.append(
+                  {
+                      "tag": tag,
+                      "branch": branch,
+                      "repo": topic["repo"],
+                      "sha": resolve_sha(tag, topic["repo"]),
+                  }
               )
-              sys.exit(1)
 
-          topic = topics[0]
+          for item in promotions:
+              print(f"{item['branch']}: {item['tag']} -> {item['sha']}")
+
+          with open(os.environ["PROMOTIONS_FILE"], "w", encoding="utf-8") as handle:
+              json.dump(promotions, handle, indent=2)
+
+          if len(promotions) == 1:
+              safe = re.sub(r"[/\s]", "-", promotions[0]["branch"])
+              safe = re.sub(r"[^A-Za-z0-9._-]", "", safe)
+              pr_branch = f"tmp/qcom-next-promote-{safe}-{promotions[0]['sha'][:12]}"
+          else:
+              fingerprint = "\n".join(
+                  f"{item['branch']}:{item['sha']}"
+                  for item in sorted(promotions, key=lambda entry: entry["branch"])
+              )
+              digest = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12]
+              pr_branch = f"tmp/qcom-next-promote-{len(promotions)}-topics-{digest}"
+
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"topic_branch={topic['branch']}\n")
-              output.write(f"topic_repo={topic['repo']}\n")
+              output.write(f"count={len(promotions)}\n")
+              output.write(f"pr_branch={pr_branch}\n")
           PY
-
-      - name: Resolve tag SHA
-        id: resolve_tag
-        env:
-          TOPIC_TAG: ${{ inputs.tag }}
-          TOPIC_REPO: ${{ steps.resolve_topic.outputs.topic_repo }}
-          PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
-        run: |
-          set -euo pipefail
-          tag_ref="refs/tags/${TOPIC_TAG}"
-          if ! git check-ref-format "$tag_ref"; then
-            echo "::error title=qcom-next::invalid tag name: ${TOPIC_TAG}"
-            exit 1
-          fi
-
-          topic_repo="$TOPIC_REPO"
-          if [[ "$topic_repo" == https://github.com/* ]]; then
-            topic_repo="https://x-access-token:${PUSH_TOKEN}@github.com/${topic_repo#https://github.com/}"
-          fi
-
-          tag_refs="$(git ls-remote --tags "$topic_repo" "$tag_ref" "${tag_ref}^{}")"
-          topic_sha="$(printf '%s\n' "$tag_refs" | awk -v ref="$tag_ref" '
-            $2 == ref { direct = $1 }
-            $2 == ref "^{}" { peeled = $1 }
-            END {
-              if (peeled != "")
-                print peeled
-              else if (direct != "")
-                print direct
-            }
-          ')"
-          if ! [[ "$topic_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "::error title=qcom-next::tag '${TOPIC_TAG}' was not found in '${TOPIC_REPO}'"
-            exit 1
-          fi
-
-          echo "sha=$topic_sha" >> "$GITHUB_OUTPUT"
 
       - name: Update qcom-next.yaml
         id: update
         env:
-          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch }}
-          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha }}
-          TOPIC_TAG: ${{ inputs.tag }}
+          PROMOTIONS_FILE: ${{ runner.temp }}/promotions.json
+          COMMIT_MSG_FILE: ${{ runner.temp }}/commit_msg.txt
+          PR_BODY_FILE: ${{ runner.temp }}/pr_body.md
+          PR_BRANCH: ${{ steps.resolve.outputs.pr_branch }}
         run: |
           set -euo pipefail
 
-          if ! [[ "$TOPIC_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "::error title=qcom-next::sha must be a 40-character hex commit SHA"
-            exit 1
-          fi
-
           base_branch="${GITHUB_REF_NAME}"
-          short_sha="${TOPIC_SHA:0:12}"
-          safe_topic="$(printf '%s' "$TOPIC_BRANCH" | tr '/[:space:]' '--' | tr -cd 'A-Za-z0-9._-')"
-          pr_branch="tmp/qcom-next-promote-${safe_topic}-${short_sha}"
-
-          git checkout -B "$pr_branch" "origin/${base_branch}"
+          git checkout -B "$PR_BRANCH" "origin/${base_branch}"
 
           python3 <<'PY'
+          import json
           import os
           import sys
 
           path = "qcom-next.yaml"
-          topic = os.environ["TOPIC_BRANCH"]
-          sha = os.environ["TOPIC_SHA"]
-          tag = os.environ["TOPIC_TAG"]
 
-          with open(path, encoding="utf-8") as f:
-              lines = f.readlines()
+
+          def fail(message):
+              print(f"::error title=qcom-next::{message}")
+              sys.exit(1)
+
+
+          with open(os.environ["PROMOTIONS_FILE"], encoding="utf-8") as handle:
+              promotions = json.load(handle)
+
+          by_branch = {item["branch"]: item for item in promotions}
+          matched = set()
+
+          with open(path, encoding="utf-8") as handle:
+              lines = handle.readlines()
 
           out = []
-          block = []
-          matched = False
+
+
+          def target_of(topic_block):
+              for branch, item in by_branch.items():
+                  labels = (
+                      f"name: {branch}",
+                      f"branch: {branch}",
+                      f"name: \"{branch}\"",
+                      f"branch: \"{branch}\"",
+                  )
+                  if any(line.strip() in labels for line in topic_block):
+                      return item
+              return None
+
 
           def flush_topic(topic_block):
-              global matched
               if not topic_block:
                   return
-              is_target = any(
-                  line.strip() in (f"name: {topic}", f"branch: {topic}")
-                  or line.strip() in (f"name: \"{topic}\"", f"branch: \"{topic}\"")
-                  for line in topic_block
-              )
-              if is_target:
-                  matched = True
-                  for line in topic_block:
-                      stripped = line.strip()
-                      if stripped.startswith("sha:"):
-                          out.append(f"    sha: {sha}\n")
-                      elif stripped.startswith("tag:"):
-                          out.append(f"    tag: {tag}\n")
-                      else:
-                          out.append(line)
-              else:
+              item = target_of(topic_block)
+              if item is None:
                   out.extend(topic_block)
+                  return
+              matched.add(item["branch"])
+              for line in topic_block:
+                  stripped = line.strip()
+                  if stripped.startswith("sha:"):
+                      out.append(f"    sha: {item['sha']}\n")
+                  elif stripped.startswith("tag:"):
+                      out.append(f"    tag: {item['tag']}\n")
+                  else:
+                      out.append(line)
 
+
+          block = []
           in_topics = False
           for line in lines:
               if line.startswith("topics:"):
@@ -234,30 +295,59 @@ jobs:
 
           flush_topic(block)
 
-          if not matched:
-              print(f"ERROR: topic '{topic}' was not found in {path}", file=sys.stderr)
-              sys.exit(1)
+          missing = sorted(set(by_branch) - matched)
+          if missing:
+              fail(f"topics not found in {path}: " + ", ".join(missing))
 
-          with open(path, "w", encoding="utf-8") as f:
-              f.writelines(out)
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.writelines(out)
+
+          if len(promotions) == 1:
+              item = promotions[0]
+              subject = f"qcom-next: promote {item['branch']} to {item['tag']}"
+              details = f"Update {item['branch']} to {item['sha']}.\n"
+          else:
+              subject = f"qcom-next: promote {len(promotions)} topics"
+              details = "".join(
+                  f"Update {item['branch']} to {item['sha']} ({item['tag']}).\n"
+                  for item in promotions
+              )
+
+          with open(os.environ["COMMIT_MSG_FILE"], "w", encoding="utf-8") as handle:
+              handle.write(f"{subject}\n\n{details}")
+
+          rows = "".join(
+              f"| `{item['branch']}` | `{item['sha']}` | `{item['tag']}` |\n"
+              for item in promotions
+          )
+          with open(os.environ["PR_BODY_FILE"], "w", encoding="utf-8") as handle:
+              handle.write(
+                  "Promote qcom-next topic branches.\n"
+                  "\n"
+                  "| Topic branch | SHA | Tag |\n"
+                  "| --- | --- | --- |\n"
+                  f"{rows}"
+                  "\n"
+                  "This PR is generated in the base repository so qcom-next CI "
+                  "can run with repository secrets.\n"
+              )
           PY
 
           if git diff --quiet -- qcom-next.yaml; then
-            echo "::notice title=qcom-next::qcom-next.yaml already contains the requested promotion"
+            echo "::notice title=qcom-next::qcom-next.yaml already contains the requested promotions"
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "base_branch=$base_branch" >> "$GITHUB_OUTPUT"
-          echo "pr_branch=$pr_branch" >> "$GITHUB_OUTPUT"
+          echo "pr_branch=$PR_BRANCH" >> "$GITHUB_OUTPUT"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push promotion branch
         if: steps.update.outputs.changed == 'true'
         env:
-          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch }}
-          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha }}
-          TOPIC_TAG: ${{ inputs.tag }}
+          COMMIT_MSG_FILE: ${{ runner.temp }}/commit_msg.txt
+          PR_BRANCH: ${{ steps.update.outputs.pr_branch }}
           PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
         run: |
           set -euo pipefail
@@ -265,30 +355,24 @@ jobs:
           git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
           git add qcom-next.yaml
 
-          git commit -m "qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}" -m "Update ${TOPIC_BRANCH} to ${TOPIC_SHA}."
+          git commit -F "$COMMIT_MSG_FILE"
 
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin "HEAD:refs/heads/${{ steps.update.outputs.pr_branch }}"
+          git push --force origin "HEAD:refs/heads/${PR_BRANCH}"
 
       - name: Create promotion PR
         if: steps.update.outputs.changed == 'true'
         id: pr
         env:
           GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
-          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch }}
-          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha }}
-          TOPIC_TAG: ${{ inputs.tag }}
+          COMMIT_MSG_FILE: ${{ runner.temp }}/commit_msg.txt
+          PR_BODY_FILE: ${{ runner.temp }}/pr_body.md
           BASE_BRANCH: ${{ steps.update.outputs.base_branch }}
           PR_BRANCH: ${{ steps.update.outputs.pr_branch }}
         run: |
           set -euo pipefail
-          title="qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}"
-
-          body="$(printf 'Promote qcom-next topic branch `%s`.\n\n| Field | Value |\n| --- | --- |\n| Topic branch | `%s` |\n| SHA | `%s` |\n| Tag | `%s` |\n\nThis PR is generated in the base repository so qcom-next CI can run with repository secrets.\n' \
-            "$TOPIC_BRANCH" \
-            "$TOPIC_BRANCH" \
-            "$TOPIC_SHA" \
-            "$TOPIC_TAG")"
+          title="$(head -n 1 "$COMMIT_MSG_FILE")"
+          body="$(cat "$PR_BODY_FILE")"
 
           existing_url="$(curl -sS -L \
             -H "Accept: application/vnd.github+json" \
@@ -329,16 +413,21 @@ jobs:
       - name: Summary
         if: always()
         env:
-          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch || 'unresolved' }}
-          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha || 'unresolved' }}
-          TOPIC_TAG: ${{ inputs.tag }}
+          PROMOTIONS_FILE: ${{ runner.temp }}/promotions.json
           PR_URL: ${{ steps.pr.outputs.pr_url }}
         run: |
+          set -uo pipefail
           echo "### qcom-next promotion" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Topic branch: \`${TOPIC_BRANCH}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "SHA: \`${TOPIC_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Tag: \`${TOPIC_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
-          if [ -n "$PR_URL" ]; then
-            echo "PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s "${PROMOTIONS_FILE:-}" ]; then
+            echo "| Topic branch | SHA | Tag |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.[] | "| `\(.branch)` | `\(.sha)` | `\(.tag)` |"' \
+              "$PROMOTIONS_FILE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No promotions were resolved; see the workflow logs." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -n "${PR_URL:-}" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "PR: ${PR_URL}" >> "$GITHUB_STEP_SUMMARY"
           fi
