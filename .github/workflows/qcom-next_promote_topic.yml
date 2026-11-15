@@ -4,19 +4,10 @@ name: qcom-next promote topic
 on:
   workflow_dispatch:
     inputs:
-      topic_branch:
-        description: Topic branch name in qcom-next.yaml, for example tech/all/dt/glymur
-        type: string
-        required: true
-      sha:
-        description: Commit SHA to promote for the topic branch
-        type: string
-        required: true
       tag:
-        description: Optional tag name to record for the topic. Leave empty to set tag to null.
+        description: Topic tag to promote, for example tech/all/dt/glymur-7.3-rc2-20261024
         type: string
-        required: false
-        default: ""
+        required: true
 permissions:
   contents: write
   pull-requests: write
@@ -32,11 +23,146 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PAT || secrets.SPAT || github.token }}
 
+      - name: Resolve topic from tag
+        id: resolve_topic
+        env:
+          TOPIC_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import sys
+
+          path = "qcom-next.yaml"
+          tag = os.environ["TOPIC_TAG"]
+          if not tag or "\n" in tag or "\r" in tag:
+              print("ERROR: tag must be a single non-empty line", file=sys.stderr)
+              sys.exit(1)
+
+          topics = []
+          block = []
+          in_topics = False
+
+          def value(line, key):
+              prefix = f"    {key}:"
+              if not line.startswith(prefix):
+                  return None
+              result = line[len(prefix):].strip()
+              if len(result) >= 2 and result[0] == result[-1] and result[0] in "\"'":
+                  result = result[1:-1]
+              return result
+
+          def add_topic(topic_block):
+              if not topic_block:
+                  return
+              topic = {}
+              for key in ("name", "repo", "branch"):
+                  for line in topic_block:
+                      if key == "name" and line.startswith("  - name:"):
+                          result = line[len("  - name:"):].strip()
+                      else:
+                          result = value(line, key)
+                      if (
+                          result is not None
+                          and len(result) >= 2
+                          and result[0] == result[-1]
+                          and result[0] in "\"'"
+                      ):
+                          result = result[1:-1]
+                      if result is not None:
+                          topic[key] = result
+                          break
+              if {"repo", "branch"} - topic.keys():
+                  print(f"ERROR: malformed topic entry: {topic}", file=sys.stderr)
+                  sys.exit(1)
+              topics.append(topic)
+
+          with open(path, encoding="utf-8") as source:
+              for line in source:
+                  if line.startswith("topics:"):
+                      in_topics = True
+                      continue
+                  if not in_topics:
+                      continue
+                  if line.startswith("  - name:"):
+                      add_topic(block)
+                      block = [line]
+                  elif block:
+                      block.append(line)
+          add_topic(block)
+
+          matches = []
+          for topic in topics:
+              for candidate in (topic.get("branch"), topic.get("name")):
+                  if candidate and tag.startswith(f"{candidate}-"):
+                      matches.append((len(candidate), topic))
+
+          if not matches:
+              print(
+                  f"ERROR: tag '{tag}' does not match a topic branch in {path}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          longest = max(length for length, _ in matches)
+          topics = [topic for length, topic in matches if length == longest]
+          branches = {topic["branch"] for topic in topics}
+          if len(branches) != 1:
+              print(
+                  f"ERROR: tag '{tag}' matches multiple topic branches: "
+                  + ", ".join(sorted(branches)),
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          topic = topics[0]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"topic_branch={topic['branch']}\n")
+              output.write(f"topic_repo={topic['repo']}\n")
+          PY
+
+      - name: Resolve tag SHA
+        id: resolve_tag
+        env:
+          TOPIC_TAG: ${{ inputs.tag }}
+          TOPIC_REPO: ${{ steps.resolve_topic.outputs.topic_repo }}
+          PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+        run: |
+          set -euo pipefail
+          tag_ref="refs/tags/${TOPIC_TAG}"
+          if ! git check-ref-format "$tag_ref"; then
+            echo "::error title=qcom-next::invalid tag name: ${TOPIC_TAG}"
+            exit 1
+          fi
+
+          topic_repo="$TOPIC_REPO"
+          if [[ "$topic_repo" == https://github.com/* ]]; then
+            topic_repo="https://x-access-token:${PUSH_TOKEN}@github.com/${topic_repo#https://github.com/}"
+          fi
+
+          tag_refs="$(git ls-remote --tags "$topic_repo" "$tag_ref" "${tag_ref}^{}")"
+          topic_sha="$(printf '%s\n' "$tag_refs" | awk -v ref="$tag_ref" '
+            $2 == ref { direct = $1 }
+            $2 == ref "^{}" { peeled = $1 }
+            END {
+              if (peeled != "")
+                print peeled
+              else if (direct != "")
+                print direct
+            }
+          ')"
+          if ! [[ "$topic_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error title=qcom-next::tag '${TOPIC_TAG}' was not found in '${TOPIC_REPO}'"
+            exit 1
+          fi
+
+          echo "sha=$topic_sha" >> "$GITHUB_OUTPUT"
+
       - name: Update qcom-next.yaml
         id: update
         env:
-          TOPIC_BRANCH: ${{ inputs.topic_branch }}
-          TOPIC_SHA: ${{ inputs.sha }}
+          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch }}
+          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha }}
           TOPIC_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
@@ -85,7 +211,7 @@ jobs:
                       if stripped.startswith("sha:"):
                           out.append(f"    sha: {sha}\n")
                       elif stripped.startswith("tag:"):
-                          out.append(f"    tag: {tag}\n" if tag else "    tag: null\n")
+                          out.append(f"    tag: {tag}\n")
                       else:
                           out.append(line)
               else:
@@ -124,14 +250,13 @@ jobs:
 
           echo "base_branch=$base_branch" >> "$GITHUB_OUTPUT"
           echo "pr_branch=$pr_branch" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push promotion branch
         if: steps.update.outputs.changed == 'true'
         env:
-          TOPIC_BRANCH: ${{ inputs.topic_branch }}
-          TOPIC_SHA: ${{ inputs.sha }}
+          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch }}
+          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha }}
           TOPIC_TAG: ${{ inputs.tag }}
           PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
         run: |
@@ -140,11 +265,7 @@ jobs:
           git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
           git add qcom-next.yaml
 
-          if [ -n "$TOPIC_TAG" ]; then
-            git commit -m "qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}" -m "Update ${TOPIC_BRANCH} to ${TOPIC_SHA}."
-          else
-            git commit -m "qcom-next: promote ${TOPIC_BRANCH} to ${{ steps.update.outputs.short_sha }}" -m "Update ${TOPIC_BRANCH} to ${TOPIC_SHA}."
-          fi
+          git commit -m "qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}" -m "Update ${TOPIC_BRANCH} to ${TOPIC_SHA}."
 
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin "HEAD:refs/heads/${{ steps.update.outputs.pr_branch }}"
@@ -154,25 +275,20 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
-          TOPIC_BRANCH: ${{ inputs.topic_branch }}
-          TOPIC_SHA: ${{ inputs.sha }}
+          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch }}
+          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha }}
           TOPIC_TAG: ${{ inputs.tag }}
           BASE_BRANCH: ${{ steps.update.outputs.base_branch }}
           PR_BRANCH: ${{ steps.update.outputs.pr_branch }}
-          SHORT_SHA: ${{ steps.update.outputs.short_sha }}
         run: |
           set -euo pipefail
-          if [ -n "$TOPIC_TAG" ]; then
-            title="qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}"
-          else
-            title="qcom-next: promote ${TOPIC_BRANCH} to ${SHORT_SHA}"
-          fi
+          title="qcom-next: promote ${TOPIC_BRANCH} to ${TOPIC_TAG}"
 
           body="$(printf 'Promote qcom-next topic branch `%s`.\n\n| Field | Value |\n| --- | --- |\n| Topic branch | `%s` |\n| SHA | `%s` |\n| Tag | `%s` |\n\nThis PR is generated in the base repository so qcom-next CI can run with repository secrets.\n' \
             "$TOPIC_BRANCH" \
             "$TOPIC_BRANCH" \
             "$TOPIC_SHA" \
-            "${TOPIC_TAG:-null}")"
+            "$TOPIC_TAG")"
 
           existing_url="$(curl -sS -L \
             -H "Accept: application/vnd.github+json" \
@@ -212,12 +328,17 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          TOPIC_BRANCH: ${{ steps.resolve_topic.outputs.topic_branch || 'unresolved' }}
+          TOPIC_SHA: ${{ steps.resolve_tag.outputs.sha || 'unresolved' }}
+          TOPIC_TAG: ${{ inputs.tag }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
         run: |
           echo "### qcom-next promotion" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Topic branch: \`${{ inputs.topic_branch }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "SHA: \`${{ inputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Tag: \`${{ inputs.tag || 'null' }}\`" >> "$GITHUB_STEP_SUMMARY"
-          if [ -n "${{ steps.pr.outputs.pr_url }}" ]; then
-            echo "PR: ${{ steps.pr.outputs.pr_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Topic branch: \`${TOPIC_BRANCH}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA: \`${TOPIC_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tag: \`${TOPIC_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PR_URL" ]; then
+            echo "PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
           fi
