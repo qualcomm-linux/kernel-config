@@ -29,7 +29,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Process presigned_urls.json
+    - name: Process artifact URLs
       id: process_urls
       uses: actions/github-script@v7
       env:
@@ -97,7 +97,7 @@ runs:
             core.setOutput('rootfs_name', rootfs_name);
             const rootfsurl = findUrlByFilename(rootfs_name);
             if (!rootfsurl) {
-              core.setFailed(`URL not found in presigned_urls.json for ${rootfs_name}`);
+              core.setFailed(`URL not found in artifact URL manifest for ${rootfs_name}`);
               return;
             }
 
@@ -226,7 +226,8 @@ runs:
       shell: bash
       run: |
         cd ../job_render
-        ramdisk_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz --expires 604800)"
+        artifact_url_base="https://qli-prod-artifacts.qualcomm.com/qli-prd-kernel-gh-artifacts"
+        ramdisk_url="${artifact_url_base}/meta-qcom/initramfs-kerneltest-full-image-qcom-armv8a.cpio.gz"
 
         # using ramdisk_url
         docker run -i --rm \
@@ -239,7 +240,7 @@ runs:
 
         # using firmware_url
         if [ -n "${{ env.FIRMWARE }}" ]; then
-          firmware_url="$(aws s3 presign s3://qli-prd-kernel-gh-artifacts/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz --expires 604800)"
+          firmware_url="${artifact_url_base}/meta-qcom/initramfs-firmware-${{ env.FIRMWARE }}-image-qcom-armv8a.cpio.gz"
           docker run -i --rm \
             --user "$(id -u):$(id -g)" \
             --workdir="$PWD" \
@@ -305,3 +306,37 @@ runs:
           echo "QDL target DTB $TARGET_DTB"
           python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json ${EXTRA_ARGS}
         fi
+
+        python3 - <<'PY'
+        from pathlib import Path
+
+        import yaml
+
+        artifact_prefix = "https://qli-prod-artifacts.qualcomm.com/qli-prd-kernel-gh-artifacts/"
+        definition_path = Path("renders/lava_job_definition.yaml")
+        definition = yaml.safe_load(definition_path.read_text())
+        matched_urls = []
+
+        def add_artifact_auth(value):
+            if isinstance(value, dict):
+                url = value.get("url")
+                if isinstance(url, str) and url.startswith(artifact_prefix):
+                    headers = value.setdefault("headers", {})
+                    if not isinstance(headers, dict):
+                        raise ValueError(f"Invalid headers for artifact URL: {url}")
+                    # LAVA resolves the credential alias server-side.
+                    headers.setdefault("QLIAuthorization", "QLI_S3_TOKEN")
+                    matched_urls.append(url)
+                for child in value.values():
+                    add_artifact_auth(child)
+            elif isinstance(value, list):
+                for child in value:
+                    add_artifact_auth(child)
+
+        add_artifact_auth(definition)
+        if not matched_urls:
+            raise ValueError("No QLI artifact URLs found in the LAVA job definition")
+
+        definition_path.write_text(yaml.safe_dump(definition, default_flow_style=False, sort_keys=False))
+        print(f"Applied QLI_S3_TOKEN authorization to {len(matched_urls)} artifact URL(s)")
+        PY

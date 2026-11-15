@@ -25,10 +25,14 @@ inputs:
     description: Upload location
     required: false
     default: ${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.run_id }}-${{ github.run_attempt }}
+  artifact_url_base:
+    description: HTTPS endpoint serving uploaded S3 artifacts
+    required: false
+    default: https://qli-prod-artifacts.qualcomm.com
 
 outputs:
   presigned_url:
-    description: Pre-signed URL for the uploaded file
+    description: Direct artifact URL for the uploaded file
     value: ${{ steps.sync-data.outputs.presigned_url }}
   s3_location:
     description: Upload location
@@ -42,44 +46,46 @@ runs:
       shell: bash
       env:
         UPLOAD_LOCATION: ${{ inputs.upload_location }}
+        ARTIFACT_URL_BASE: ${{ inputs.artifact_url_base }}
       run: |
         echo "::group::$(printf '__________ %-100s' 'Process' | tr ' ' _)"
+        build_artifact_url() {
+          local object_key="$1"
+          local encoded_object_key
+
+          encoded_object_key="$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe="/"))' "$object_key")"
+          printf '%s/%s/%s\n' "${ARTIFACT_URL_BASE%/}" "${{ inputs.s3_bucket }}" "$encoded_object_key"
+        }
+
         case "${{ inputs.mode }}" in
           multi-upload)
             echo "Uploading files to S3 bucket..."
-            first_line=true
-            # Start the JSON object
-            echo "{" > ${{ github.workspace }}/presigned_urls.json
+            manifest="${{ github.workspace }}/presigned_urls.json"
+            # Keep the existing manifest name while storing direct artifact URLs.
+            echo '{}' > "$manifest"
             while IFS= read -r file; do
               if [ -f "$file" ]; then
                 echo "Uploading $file..."
                 aws s3 cp "$file" s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/
                 echo "Uploaded $file to s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}"
-                echo "Creating Pre-signed URL for $file..."
                 filename=$(basename "$file")
-                presigned_url=$(aws s3 presign s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/$filename --expires-in 259200)
-                if [ "$first_line" = true ]; then
-                  first_line=false
-                else
-                  echo "," >> ${{ github.workspace }}/presigned_urls.json
-                fi
-                # Append the pre-signed URL to the file
-                echo " \"${file}\": \"${presigned_url}\"" >> ${{ github.workspace }}/presigned_urls.json
-                echo "Pre-signed URL for $file: $presigned_url"
+                artifact_url=$(build_artifact_url "${UPLOAD_LOCATION%/}/$filename")
+                jq --arg file "$file" --arg url "$artifact_url" '. + {($file): $url}' "$manifest" > "${manifest}.tmp"
+                mv "${manifest}.tmp" "$manifest"
+                echo "Artifact URL for $file: $artifact_url"
               else
                 echo "Warning: $file does not exist or is not a regular file."
               fi
             done < "${{ inputs.local_file }}"
-            # Close the JSON object
-            echo "}" >> ${{ github.workspace }}/presigned_urls.json
             ;;
           single-upload)
             echo "Uploading single file to S3 bucket..."
             aws s3 cp "${{ inputs.local_file }}" s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/
             echo "Uploaded ${{ inputs.local_file }} to s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}"
-            echo "Creating Pre-signed URL for ${{ inputs.local_file }}..."
-            presigned_url=$(aws s3 presign s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/${{ inputs.local_file }} --expires-in 259200)
-            echo "presigned_url=${presigned_url}" >> "$GITHUB_OUTPUT"
+            filename=$(basename "${{ inputs.local_file }}")
+            artifact_url=$(build_artifact_url "${UPLOAD_LOCATION%/}/$filename")
+            echo "presigned_url=${artifact_url}" >> "$GITHUB_OUTPUT"
+            echo "Artifact URL for ${{ inputs.local_file }}: $artifact_url"
             ;;
           download)
             #Download The required file from s3
