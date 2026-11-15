@@ -206,6 +206,9 @@ jobs:
     outputs:
       s3_location: ${{ steps.upload-artifacts.outputs.s3_location }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download build base artifact
         uses: actions/download-artifact@v4
         with:
@@ -243,7 +246,7 @@ jobs:
 
       - name: Upload artifacts
         id: upload-artifacts
-        uses: qualcomm-linux/kernel-config/.github/actions/aws_s3_helper@main
+        uses: ./.github/actions/aws_s3_helper
         with:
           s3_bucket: qli-prd-kernel-gh-artifacts
           local_file: ${{ github.workspace }}/file_list.txt
