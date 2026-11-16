@@ -127,8 +127,8 @@ topics:
   - name: tech/net/bluetooth
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/net/bluetooth
-    sha: bf830181655ad85bb0fd7b263c55d8e7cdce709e
-    tag: null
+    sha: 1ec6c248dd47b9233f588f01737bbf6ea999c588
+    tag: tech/net/bluetooth-7.4-rc1-20261105
   - name: tech/pm/pmdomain
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/pm/pmdomain
