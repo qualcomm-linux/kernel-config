@@ -180,5 +180,61 @@
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
     "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+  },
+  "hawi-mtp": {
+    "machine": "hawi-mtp",
+    "firmware": "",
+    "lavaname": "hawi-mtp",
+    "target": "hawi-mtp",
+    "buildid": "",
+    "firmwareid": "hawi-mtp",
+    "rootfs": "hawi-mtp",
+    "flash_type": "qdl",
+    "storage": "ufs",
+    "hypervisor": "gunyah",
+    "build_types": ["kbdev"],
+    "branches": ["qcom-next-staging"]
+  },
+  "eliza-cqs-evk": {
+    "machine": "eliza-cqs-evk-emmc",
+    "firmware": "",
+    "lavaname": "eliza-cqs-evk",
+    "target": "eliza-cqs-evk",
+    "buildid": "",
+    "firmwareid": "eliza-evk-emmc",
+    "rootfs": "eliza-evk-emmc",
+    "flash_type": "qdl",
+    "storage": "emmc",
+    "hypervisor": "gunyah",
+    "build_types": ["kbdev"],
+    "branches": ["qcom-next-staging"]
+  },
+  "mahua-crd": {
+    "machine": "mahua-crd",
+    "firmware": "",
+    "lavaname": "mahua-crd",
+    "target": "mahua-crd",
+    "buildid": "",
+    "firmwareid": "mahua-crd",
+    "rootfs": "mahua-crd",
+    "flash_type": "qdl",
+    "storage": "spinor",
+    "hypervisor": "gunyah",
+    "build_types": ["kbdev", "yocto"],
+    "branches": ["qcom-next-staging"]
+  },
+  "nord-rrd": {
+    "machine": "nord-rrd",
+    "firmware": "",
+    "lavaname": "nord-rrd",
+    "target": "nord-rrd",
+    "buildid": "",
+    "firmwareid": "nord-rrd",
+    "rootfs": "nord-rrd",
+    "flash_type": "qdl",
+    "storage": "spinor",
+    "hypervisor": "gunyah",
+    "build_types": ["kbdev", "yocto"],
+    "branches": ["qcom-next-staging"]
   }
 }
