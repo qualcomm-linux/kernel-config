@@ -8,6 +8,14 @@ inputs:
     required: false
     default: ""
 
+  build_type:
+    description: >
+      Build type used to filter test targets (kbdev or yocto). Targets opt out
+      by listing only the wanted types in "build_types" in ci/MACHINES.json.
+      Targets without "build_types" are enabled for every build type.
+    required: false
+    default: ""
+
 outputs:
   build_matrix:
     description: Build matrix
@@ -37,6 +45,7 @@ runs:
       uses: actions/github-script@v7
       env:
         INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_BUILD_TYPE: ${{ inputs.build_type }}
       with:
         script: |
           const fs = require('fs');
@@ -78,9 +87,12 @@ runs:
           if (inputBranch !== branch) {
             console.log(`Using ${branch} matrix for candidate branch ${inputBranch}`);
           }
+          // A target without "build_types" stays enabled for every build type.
+          const buildType = (process.env.INPUT_BUILD_TYPE || "").toLowerCase();
           const rootfs_matrix = Object.values(targets)
             .filter(({ rootfs }) => rootfs && rootfs.trim() !== '')
             .filter(({ branches }) => !branch || !branches || branches.includes(branch))
+            .filter(({ build_types }) => !buildType || !build_types || build_types.includes(buildType))
             .map(({ machine, rootfs, firmwareid, lavaname, flash_type, hypervisor, storage }) => ({
               machine,
               rootfs,

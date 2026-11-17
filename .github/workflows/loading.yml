@@ -10,6 +10,12 @@ on:
         type: string
         required: false
         default: ""
+
+      build_type:
+        description: Build type used to filter test targets (kbdev or yocto)
+        type: string
+        required: false
+        default: ""
     outputs:
       build_matrix:
         description: Build matrix
@@ -49,3 +55,4 @@ jobs:
         uses: ./.github/actions/loading
         with:
           branch: ${{ inputs.branch }}
+          build_type: ${{ inputs.build_type }}
