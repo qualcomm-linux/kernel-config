@@ -289,17 +289,23 @@ jobs:
         id: expected_targets
         run: |
           set -euo pipefail
-          machines="$(jq -c '
-            [
-              .[]
-              | select(.rootfs != "" and ((.branches | not) or (.branches | index("qcom-next-staging"))))
-              | .machine
-            ]
-            | unique
-          ' ci/MACHINES.json)"
-          echo "kbdev_multimedia=$(jq -c '[.[] | "kbdev-\(.)-multimedia"]' <<< "$machines")" >> "$GITHUB_OUTPUT"
-          echo "yocto_multimedia=$(jq -c '[.[] | "yocto-\(.)-multimedia"]' <<< "$machines")" >> "$GITHUB_OUTPUT"
-          echo "yocto_proprietary=$(jq -c '[.[] | "yocto-\(.)-proprietary"]' <<< "$machines")" >> "$GITHUB_OUTPUT"
+          # A target without "build_types" stays enabled for every build type.
+          machines_for() {
+            jq -c --arg build_type "$1" '
+              [
+                .[]
+                | select(.rootfs != "" and ((.branches | not) or (.branches | index("qcom-next-staging"))))
+                | select((.build_types | not) or (.build_types | index($build_type)))
+                | .machine
+              ]
+              | unique
+            ' ci/MACHINES.json
+          }
+          kbdev_machines="$(machines_for kbdev)"
+          yocto_machines="$(machines_for yocto)"
+          echo "kbdev_multimedia=$(jq -c '[.[] | "kbdev-\(.)-multimedia"]' <<< "$kbdev_machines")" >> "$GITHUB_OUTPUT"
+          echo "yocto_multimedia=$(jq -c '[.[] | "yocto-\(.)-multimedia"]' <<< "$yocto_machines")" >> "$GITHUB_OUTPUT"
+          echo "yocto_proprietary=$(jq -c '[.[] | "yocto-\(.)-proprietary"]' <<< "$yocto_machines")" >> "$GITHUB_OUTPUT"
 
       - name: Download kbdev multimedia result artifacts
         uses: actions/download-artifact@v4
