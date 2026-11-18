@@ -122,8 +122,8 @@ topics:
   - name: tech/net/eth
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/net/eth
-    sha: 715180713fce420325bc76f087389ec12f6ad214
-    tag: tech/net/eth-7.3-rc4-20261024
+    sha: 65af320370b7ba801469f32448cff2c0c19c91ea
+    tag: tech/net/eth-7.3-rc4-20261025
   - name: tech/net/bluetooth
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/net/bluetooth
