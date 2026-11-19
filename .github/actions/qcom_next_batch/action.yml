@@ -1,0 +1,81 @@
+---
+name: qcom-next batch plan
+description: >
+  Group open qcom-next.yaml promotion PRs into batches that are safe to validate
+  together, using the safety zones in qcom-next-batching.yaml.
+
+inputs:
+  token:
+    description: Token used to read pull requests, reviews and file contents.
+    required: true
+  config_file:
+    description: Path to the batching configuration.
+    required: false
+    default: qcom-next-batching.yaml
+  tracked_file:
+    description: File a PR must change to be considered a promotion PR.
+    required: false
+    default: qcom-next.yaml
+  base_branch:
+    description: Base branch to scan. Defaults to the repository default branch.
+    required: false
+    default: ""
+  max_dispatches:
+    description: Override defaults.max_dispatches_per_run from the config.
+    required: false
+    default: ""
+  only_prs:
+    description: Restrict planning to these PR numbers (comma or space separated).
+    required: false
+    default: ""
+  ignore_in_flight:
+    description: >
+      Plan and dispatch even when a previous qcom-next pipeline is still
+      running. Defeats the one-at-a-time guarantee; use deliberately.
+    required: false
+    default: "false"
+  output_dir:
+    description: Directory for batches.json and summary.md.
+    required: false
+    default: qcom-next-batch
+
+outputs:
+  batches:
+    description: JSON array of batches selected for dispatch.
+    value: ${{ steps.plan.outputs.batches }}
+  batch_count:
+    description: Number of batches selected for dispatch.
+    value: ${{ steps.plan.outputs.batch_count }}
+  has_batches:
+    description: "true when at least one batch was selected."
+    value: ${{ steps.plan.outputs.has_batches }}
+  busy:
+    description: "true when a previous qcom-next pipeline is still running."
+    value: ${{ steps.plan.outputs.busy }}
+  summary_file:
+    description: Path to the generated markdown summary.
+    value: ${{ inputs.output_dir }}/summary.md
+  plan_file:
+    description: Path to the generated plan JSON.
+    value: ${{ inputs.output_dir }}/batches.json
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure PyYAML
+      shell: bash
+      run: python3 -c 'import yaml' || pip install --quiet pyyaml
+
+    - name: Plan batches
+      id: plan
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        CONFIG_FILE: ${{ inputs.config_file }}
+        TRACKED_FILE: ${{ inputs.tracked_file }}
+        BASE_BRANCH: ${{ inputs.base_branch }}
+        MAX_DISPATCHES: ${{ inputs.max_dispatches }}
+        ONLY_PRS: ${{ inputs.only_prs }}
+        OUTPUT_DIR: ${{ inputs.output_dir }}
+        IGNORE_IN_FLIGHT: ${{ inputs.ignore_in_flight }}
+      run: python3 "${GITHUB_ACTION_PATH}/plan.py"
