@@ -28,8 +28,14 @@ branches:
         name: smmu
         result: fail
       - target: kbdev-lemans-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-lemans-evk-multimedia
         name: smmu
         result: fail
+      - target: kbdev-monaco-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
       - target: kbdev-monaco-evk-multimedia
         name: WiFi_Firmware_Driver
         result: fail
@@ -54,6 +60,9 @@ branches:
       - target: kbdev-purwa-iot-evk-multimedia
         name: smmu
         result: fail
+      - target: kbdev-qcs615-ride-multimedia
+        name: Audio_Card_Registration
+        result: skip
       - target: kbdev-qcs615-ride-multimedia
         name: Ethernet_Basic_Validation
         result: skip
@@ -82,6 +91,9 @@ branches:
         name: USBHost
         result: skip
       - target: kbdev-qcs8300-ride-multimedia
+        name: Audio_Card_Registration
+        result: skip
+      - target: kbdev-qcs8300-ride-multimedia
         name: Ethernet_Basic_Validation
         result: skip
       - target: kbdev-qcs8300-ride-multimedia
@@ -93,6 +105,12 @@ branches:
       - target: kbdev-qcs8300-ride-multimedia
         name: KVM_Infra
         result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: USBHost
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: Audio_Card_Registration
+        result: skip
       - target: kbdev-qcs9100-ride-r3-multimedia
         name: Ethernet_Basic_Validation
         result: fail
@@ -112,11 +130,17 @@ branches:
         name: adsp_remoteproc
         result: skip
       - target: kbdev-shikra-iqs-evk-multimedia
+        name: Audio_Card_Registration
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
         name: DSP_AudioPD
         result: skip
       - target: kbdev-shikra-iqs-evk-multimedia
         name: Ethernet_Basic_Validation
         result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: fail
       - target: kbdev-shikra-iqs-evk-multimedia
         name: GIC
         result: fail
