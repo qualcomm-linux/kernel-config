@@ -7,3 +7,8 @@ needs.
 
 There is also a ci.conf.sample file if you want to create your own
 configuration file for local integration testing.
+
+Promotion PRs against qcom-next.yaml are validated in batches. See
+qcom-next-batching.md for the batching strategy and for which topic
+branches are grouped together, and qcom-next-batching.yaml for the
+configuration itself.

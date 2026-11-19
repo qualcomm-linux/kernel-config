@@ -1,0 +1,351 @@
+---
+# Safety zones for qcom-next PR batching.
+#
+# The dispatcher (.github/workflows/qcom-next_batch_dispatch.yml) watches open
+# PRs that change qcom-next.yaml, works out which topic branches each PR
+# promotes, and groups PRs into batches that are safe to validate in one
+# automerge run.
+#
+# Rules, in the order they are applied:
+#   1. A PR is only batchable if every topic it promotes lives in the same zone.
+#      A PR spanning two zones runs on its own.
+#   2. A topic in a zone with `solo: true` is never batched.
+#   3. A topic in a zone with `wildcard: true` may join a batch in any zone, and
+#      does not constrain which zone its PR is anchored to. Wildcards are placed
+#      after the zoned batches are formed, and still respect `conflicts` and
+#      `max_batch_size`.
+#   4. A pair listed under `conflicts` is never placed in the same batch, even
+#      when both topics are in the same zone.
+#   5. A topic that is not listed in any zone is treated as solo. New topics are
+#      therefore safe by default and must be classified explicitly to be batched.
+#
+# Zone membership accepts exact topic branch names and fnmatch globs. Globs are
+# deliberately broad so a newly added sibling topic lands in the right zone.
+#
+# Zones are evaluated in file order and the first zone whose patterns match a
+# topic wins, so a narrow zone must be listed before a broader glob that would
+# also match it.
+#
+# Derived from the 49 topic branches in qcom-next.conf by diffing each branch
+# against its merge-base with the baseline and measuring file overlap. Four
+# files are "contention hubs" touched by many topics. Conflicts there are
+# append-style list edits, cheap to resolve, so they are tolerated inside a zone
+# and are NOT listed under `conflicts`:
+#   arch/arm64/boot/dts/qcom/Makefile                12 topics
+#   arch/arm64/configs/defconfig                     10 topics
+#   MAINTAINERS                                       9 topics
+#   Documentation/devicetree/bindings/arm/qcom.yaml    7 topics
+# Everything under `conflicts` is a measured overlap on real source or .dtsi.
+#
+# Five topics in qcom-next.conf are currently ancestors of the baseline and
+# carry no work of their own: tech/debug/rdbg, tech/mm/phy, tech/storage/nvmem,
+# tech/virt/gunyah and tech/mproc/all. They cannot collide with anything, so
+# they are grouped normally; re-measure them once they carry commits.
+
+version: 1
+
+defaults:
+  # Topics per batch when a zone does not override it.
+  max_batch_size: 3
+
+  # Only ever one pipeline at a time: dispatch a single batch per run, and only
+  # when nothing from a previous batch is still running. The downstream pipeline
+  # publishes to the shared qcom-next branch, so overlapping runs would race.
+  max_dispatches_per_run: 1
+  serialize: true
+
+  # Workflows that must be idle before a new batch is dispatched. A run counts
+  # as busy while it is queued, waiting for environment approval, or executing,
+  # so the next batch only starts after the previous one has finished.
+  block_on_workflows:
+    - qcom-next_topic_update_manual.yml
+    - qcom-next_topic_update_pr.yml
+    - qcom-next_publish.yml
+    - qcom-next_publish_manual.yml
+
+  # PR gating. Approval is not enforced; reviewers gate the merge, not the CI
+  # run. Set require_approval to true and min_approvals to 1 to re-enable.
+  require_mergeable: true
+  require_approval: false
+  min_approvals: 0
+  ignore_draft: true
+
+  # PR states accepted when require_mergeable is true. "unstable" means
+  # mergeable with checks still running or failing, which is the normal state
+  # for a promotion PR. Add "blocked" if branch protection starts reporting it.
+  allowed_mergeable_states:
+    - clean
+    - unstable
+    - has_hooks
+
+  # A PR carrying any of these labels is never dispatched.
+  #
+  # qcom-next-conflict is applied by the candidate build when a PR's topic
+  # branch fails to merge. The PR is dropped from the batch, the rest of the
+  # batch continues, and the PR stays blocked until the topic branch is rebased
+  # and the label is removed.
+  skip_labels:
+    - do-not-batch
+    - wip
+    - hold
+    - qcom-next-conflict
+
+  # Applied to every PR in a batch at dispatch time. A labelled PR is never
+  # dispatched again, so a PR is picked up at most once until someone removes
+  # the label by hand. This is what stops the scheduled run from re-submitting
+  # work that is already validated, in flight, or awaiting a decision.
+  dispatched_label: qcom-next-dispatched
+
+  # Topics with no zone are run solo instead of being silently batched.
+  unknown_topic_policy: solo
+
+zones:
+  # ---------------------------------------------------------------- batchable
+  - name: dt-soc
+    description: >
+      Per-SoC devicetree topics: qcs6490, qcs9100, qcs8300, qcs615, eliza,
+      hamoa, glymur, kaanapali, pakala. Each owns its own
+      arch/arm64/boot/dts/qcom files and they collide only on the shared dtb
+      Makefile and the qcom.yaml binding. glymur and kaanapali share
+      glymur.dtsi, see conflicts.
+    max_batch_size: 4
+    topics:
+      - tech/all/dt/*
+
+  - name: bsp
+    description: >
+      SoC BSP drivers: clk, devfreq, ec, interconnect, sched. Separate driver
+      directories with no measured overlap between them. soc-infra is excluded
+      and runs solo.
+    max_batch_size: 3
+    topics:
+      - tech/bsp/clk
+      - tech/bsp/devfreq
+      - tech/bsp/ec
+      - tech/bsp/interconnect
+      - tech/bsp/pinctrl
+      - tech/bsp/remoteproc
+      - tech/bsp/sched
+
+  - name: bus
+    description: >
+      PCI and USB buses. pci/all and usb/all share no files with each other,
+      but both reach into board DT and other subsystems, see conflicts.
+    max_batch_size: 2
+    topics:
+      - tech/bus/*
+
+  - name: networking
+    description: >
+      WLAN, ethernet and bluetooth. eth has no measured overlap with any topic.
+      bluetooth also carries board DT and power sequencing, see conflicts.
+    max_batch_size: 3
+    topics:
+      - tech/net/*
+
+  - name: power
+    description: >
+      Power, thermal and PMIC drivers. No measured overlap between the three.
+    max_batch_size: 3
+    topics:
+      - tech/pm/*
+      - tech/pmic/*
+
+  - name: security
+    description: >
+      Crypto, SCM firmware and OP-TEE. firmware-smc and optee-next both edit
+      qcom_scm.c and must not share a batch, see conflicts.
+    max_batch_size: 3
+    topics:
+      - tech/security/*
+
+  - name: storage-mem
+    description: >
+      UFS/eMMC storage, nvmem, plus the consolidated dma-buf and IOMMU memory
+      topic. nvmem currently carries no work.
+    max_batch_size: 2
+    topics:
+      - tech/storage/*
+      - tech/mem/*
+
+  - name: debug
+    description: >
+      Coresight hardware tracing and rdbg. hwtracing has no measured hard
+      overlap with any topic; rdbg currently carries no work.
+    max_batch_size: 2
+    topics:
+      - tech/debug/*
+
+  # Listed before the tech/mm/* red zone below: first matching zone wins.
+  - name: camera
+    description: >
+      Camera subsystem. Exempt from the multimedia red zone and allowed to join
+      a batch in any zone: it has no file overlap with any batchable topic, and
+      its only file overlap anywhere is with tech/mm/gpu, which is solo and so
+      never batches.
+
+      It is adjacent to three batchable topics in drivers/phy/qualcomm
+      (pci/all, usb/all, storage/all), but camss edits the CSI PHY while those
+      edit their own, with no shared file.
+
+      A camss PR rides along with whichever batch is already going out, so it
+      costs no extra pipeline run. If no batch is available it runs on its own.
+    wildcard: true
+    max_batch_size: 2
+    topics:
+      - tech/mm/camss
+
+  - name: platform-services
+    description: >
+      Multiprocessor messaging (rpmsg, qmi, qrtr) and the Gunyah hypervisor
+      driver. Both currently sit behind the baseline and carry no work, so no
+      overlap could be measured. They share no driver directory with each
+      other. Re-measure once they start landing commits.
+    max_batch_size: 2
+    topics:
+      - tech/mproc/*
+      - tech/virt/*
+
+  # --------------------------------------------------------------------- solo
+  - name: multimedia
+    description: >
+      Display, GPU, video, audio, fastrpc and the multimedia PHY topic. Camera
+      is exempt and handled by the `camera` wildcard zone above.
+
+      Treated as a red zone and never batched, for three reasons that
+      file-level overlap does not capture.
+
+      Size: drm (109 files), video (69), audio (43) and camss (39) are the
+      largest topics in the tree after gpu and overlay/dt, so a batch of three
+      would be roughly 200 changed files and the most expensive bisect
+      available when something fails.
+
+      Adjacency: camss and drm both edit drivers/phy/qualcomm (3 files each,
+      CSI versus DSI/DP), and camss and video both edit the media bindings.
+      They share no file today, so a file-level check scores this as safe.
+
+      Runtime coupling: DPU, CAMSS, IRIS and LPASS share SMMU contexts, clocks
+      and interconnect bandwidth. Disjoint diffs do not imply independence at
+      runtime, and a display or camera regression cannot be attributed to one
+      PR inside a batch.
+
+      Note for anyone re-enabling batching here: gpu sits 1877 commits and 7824
+      files ahead of the baseline and overlaps drm, audio, camss, fastrpc and
+      video, so it must stay solo regardless. tech/bsp/clk overlaps
+      tech/mm/audio/all in drivers/clk/qcom, and tech/bus/usb/all overlaps
+      tech/mm/drm in phy-qcom-qmp-combo.c.
+    solo: true
+    topics:
+      - tech/mm/*
+
+  - name: soc-infra
+    description: >
+      Broad drivers/soc/qcom and firmware changes (51 files). Now also carries
+      the remoteproc work, and overlaps optee-next, firmware-smc, workaround
+      and nord.
+    solo: true
+    topics:
+      - tech/bsp/soc-infra
+
+  - name: kernel-config
+    description: >
+      arch/arm64/configs changes. defconfig is the second most contended file
+      in the tree, shared with ten other topics.
+    solo: true
+    topics:
+      - tech/all/config
+
+  - name: workaround
+    description: >
+      Carries fixes that intentionally touch files owned by other topics:
+      IOMMU, PCI quirks, SCM firmware and per-SoC DT.
+    solo: true
+    topics:
+      - tech/all/workaround
+
+  - name: dt-overlay
+    description: >
+      Devicetree overlays; 75 files spanning the per-SoC DT topics
+      (lemans, monaco, talos).
+    solo: true
+    topics:
+      - tech/overlay/dt
+
+  - name: soc-enablement
+    description: >
+      Whole-SoC enablement branches combining DT, drivers and defconfig.
+      shikra overlaps pci/all, crypto, fastrpc, audio, unoq and nord.
+    solo: true
+    topics:
+      - tech/all/hawi
+      - tech/all/maili
+      - tech/all/shikra
+
+  - name: hw-early-enablement
+    description: >
+      Pre-silicon enablement. nord spans 53 files and overlaps at least ten
+      other topics across audio, PCI, PMIC, power, DT and firmware.
+    solo: true
+    topics:
+      - tech/hwe/*
+      - early/hwe/*
+
+  - name: downstream-debug
+    description: >
+      Never-upstreamed debug carries. Shares the qcom firmware Kconfig and
+      Makefile with firmware-smc.
+    solo: true
+    topics:
+      - tech/noup/debug/all
+
+# Measured hard overlaps on real source or .dtsi files, for topics that are
+# otherwise batchable. Enforced regardless of zone, so these stay correct if
+# zones are widened or merged later.
+#
+# Overlaps involving a solo topic are not listed: those topics never batch, so
+# the zone rule already prevents the collision.
+conflicts:
+  # --- same zone: these are the pairs the zone rule alone would not catch ---
+  - pair: [tech/security/firmware-smc, tech/security/optee-next]
+    reason: drivers/firmware/qcom/qcom_scm.c
+  - pair: [tech/all/dt/glymur, tech/all/dt/kaanapali]
+    reason: arch/arm64/boot/dts/qcom/glymur.dtsi
+
+  # --- cross zone: already prevented by the zone rule, kept for safety if
+  #     zones are ever merged ---
+
+  # kodiak.dtsi and the rb3gen2 board files are shared by four topics.
+  - pair: [tech/bus/usb/all, tech/all/dt/qcs6490]
+    reason: arch/arm64/boot/dts/qcom/{kodiak.dtsi,qcs6490-rb3gen2.dts}
+  - pair: [tech/net/bluetooth, tech/all/dt/qcs6490]
+    reason: arch/arm64/boot/dts/qcom/{kodiak.dtsi,qcs6490-rb3gen2.dts}
+  - pair: [tech/bus/usb/all, tech/net/bluetooth]
+    reason: arch/arm64/boot/dts/qcom/{kodiak.dtsi,qcs6490-rb3gen2.dts}
+  - pair: [tech/mem/all, tech/all/dt/qcs6490]
+    reason: arch/arm64/boot/dts/qcom/kodiak.dtsi
+  - pair: [tech/mem/all, tech/net/bluetooth]
+    reason: arch/arm64/boot/dts/qcom/kodiak.dtsi
+  - pair: [tech/bus/usb/all, tech/mem/all]
+    reason: arch/arm64/boot/dts/qcom/kodiak.dtsi
+
+  # PCI host driver is shared with the WLAN and bluetooth topics.
+  - pair: [tech/bus/pci/all, tech/net/ath]
+    reason: drivers/net/wireless/ath/{ath11k,ath12k}/pci.c
+  - pair: [tech/bus/pci/all, tech/net/bluetooth]
+    reason: drivers/bluetooth/hci_qca.c, drivers/power/sequencing/pwrseq-pcie-m2.c
+
+  # USB and clk share the dwc3 glue.
+  - pair: [tech/bsp/clk, tech/bus/usb/all]
+    reason: drivers/usb/dwc3/dwc3-qcom.c
+
+  # cpufreq core header is shared by the scheduler and power topics.
+  - pair: [tech/bsp/sched, tech/pm/power]
+    reason: include/linux/cpufreq.h
+
+  # WCN power sequencing sits between bluetooth and power.
+  - pair: [tech/net/bluetooth, tech/pm/power]
+    reason: drivers/power/sequencing/pwrseq-qcom-wcn.c
+
+  # Storage ships UFS nodes in the hamoa DT.
+  - pair: [tech/storage/all, tech/all/dt/hamoa]
+    reason: arch/arm64/boot/dts/qcom/hamoa.dtsi
