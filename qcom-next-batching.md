@@ -394,7 +394,7 @@ Run **qcom-next batch dispatch** from the Actions tab:
 | `dry_run` | Plan and report without dispatching |
 | `max_dispatches` | Dispatch more than one batch in this run |
 | `only_prs` | Restrict planning to specific PR numbers |
-| `base_branch` | Scan a base other than the repository default |
+| `base_branch` | Scan a base other than the branch the run started from |
 | `ignore_in_flight` | Dispatch even if a pipeline is still running |
 
 ### Running it from a non-default branch
@@ -410,9 +410,14 @@ to the dispatcher. Two things follow:
 - The dispatcher passes `--ref $GITHUB_REF_NAME` when it starts a batch, so a
   run launched from branch `X` also runs the topic update from branch `X`. The
   target workflow still has to exist on `main` to be dispatchable.
-- Planning still defaults to the repository default branch. If the PRs you want
-  to test target somewhere else, set `base_branch`. A base that does not exist
-  fails the run rather than quietly reporting no work.
+- Planning defaults to **the branch the run was started from**, not the
+  repository default branch. A dispatcher running from branch `X` therefore
+  only ever acts on PRs targeting `X`, so an untested change cannot label and
+  dispatch the live queue. On the schedule the ref is the default branch, so
+  scheduled behaviour is unchanged.
+- To point a branch's dispatcher at another base deliberately, set
+  `base_branch`. A base that does not exist fails the run rather than quietly
+  reporting no work.
 
 When testing from a branch, use `dry_run: true` first. A real dispatch builds a
 candidate and publishes to the shared `qcom-next` branch, and it labels the PRs

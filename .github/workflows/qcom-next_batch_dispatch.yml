@@ -36,9 +36,10 @@ on:
         default: ""
       base_branch:
         description: >
-          Base branch to scan for promotion PRs. Defaults to the repository
-          default branch. Set this when testing the dispatcher from a
-          non-default branch whose PRs target somewhere else.
+          Base branch to scan for promotion PRs. Defaults to the branch this
+          run was started from, so a run launched from a branch only ever acts
+          on PRs targeting that branch. Set this to scan somewhere else, for
+          example to try a branch's dispatcher against the PRs targeting main.
         type: string
         required: false
         default: ""
@@ -75,7 +76,12 @@ jobs:
           config_file: qcom-next-batching.yaml
           max_dispatches: ${{ inputs.max_dispatches }}
           only_prs: ${{ inputs.only_prs }}
-          base_branch: ${{ inputs.base_branch }}
+          # Default to the ref this run was started from, not the repository
+          # default branch. A dispatcher running from a branch then acts only
+          # on PRs targeting that branch, so an untested change cannot label
+          # and dispatch the real queue. On the schedule this is the default
+          # branch anyway, so scheduled behaviour is unchanged.
+          base_branch: ${{ inputs.base_branch || github.ref_name }}
           ignore_in_flight: ${{ inputs.ignore_in_flight }}
 
       - name: Dispatch batch
