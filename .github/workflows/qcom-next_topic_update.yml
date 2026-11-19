@@ -17,6 +17,15 @@ on:
         type: string
         required: false
         default: ""
+      max_quarantine_attempts:
+        description: >
+          How many times to rebuild the candidate after dropping a PR whose
+          topic branch failed to merge. automerge stops at the first conflicting
+          topic, so a batch with N conflicting PRs needs N+1 attempts. The
+          default covers a full batch of the largest zone.
+        type: string
+        required: false
+        default: "5"
 
 permissions:
   contents: write
@@ -46,50 +55,14 @@ jobs:
     outputs:
       ref: ${{ steps.push.outputs.ref }}
       sha: ${{ steps.push.outputs.sha }}
-      prs_json: ${{ steps.merge_prs.outputs.prs_json }}
+      prs_json: ${{ steps.build.outputs.prs_json }}
+      dropped_json: ${{ steps.build.outputs.dropped_json }}
     steps:
       - name: Checkout kernel-config
         uses: actions/checkout@v4
         with:
           path: kernel-config
           fetch-depth: 0
-
-      - name: Merge kernel-config PRs
-        id: merge_prs
-        env:
-          PR: ${{ inputs.pr_number }}
-          PR_NUMBERS: ${{ inputs.pr_numbers }}
-        run: |
-          set -euo pipefail
-          cd kernel-config
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          base_sha="$(git rev-parse HEAD)"
-
-          if [ -n "$PR" ]; then
-            prs=("$PR")
-          else
-            mapfile -t prs < <(jq -r '.[]' <<< "$PR_NUMBERS")
-          fi
-
-          for pr in "${prs[@]}"; do
-            echo "Merging kernel-config PR #$pr"
-            git fetch origin "pull/${pr}/head:pr-${pr}"
-            head_sha="$(git rev-parse "pr-${pr}")"
-            git merge --no-ff --no-edit "pr-${pr}"
-            merge_sha="$(git rev-parse HEAD)"
-            jq -n \
-              --arg number "$pr" \
-              --arg head_sha "$head_sha" \
-              --arg merge_sha "$merge_sha" \
-              '{number: ($number | tonumber), head_sha: $head_sha, merge_sha: $merge_sha}' >> ../prs.jsonl
-          done
-
-          merged_sha="$(git rev-parse HEAD)"
-          prs_json="$(jq -s -c . ../prs.jsonl)"
-          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
-          echo "merged_sha=$merged_sha" >> "$GITHUB_OUTPUT"
-          echo "prs_json=$prs_json" >> "$GITHUB_OUTPUT"
 
       - name: Checkout automerge
         uses: actions/checkout@v4
@@ -110,21 +83,193 @@ jobs:
           fetch-tags: true
           token: ${{ secrets.SPAT || github.token }}
 
-      - name: Run Automerge
-        run:  |
+      # Merge the kernel-config PRs, run automerge, and if a topic branch
+      # conflicts, drop the PR that promoted it and rebuild with the rest.
+      #
+      # automerge is invoked with -p, so a conflicting topic is aborted and
+      # skipped rather than failing the run. Left alone that would publish a
+      # tree missing a topic that qcom-next.yaml still claims, so each
+      # conflicting topic is blamed on its PR and the candidate is rebuilt.
+      - name: Build candidate, quarantining conflicting PRs
+        id: build
+        env:
+          PR: ${{ inputs.pr_number }}
+          PR_NUMBERS: ${{ inputs.pr_numbers }}
+          MAX_ATTEMPTS: ${{ inputs.max_quarantine_attempts }}
+        run: |
           set -euo pipefail
-          cd $GITHUB_WORKSPACE/kernel-topics
-          test -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf
-          echo $GITHUB_WORKSPACE/kernel-config/qcom-next.yaml
-          $GITHUB_WORKSPACE/automerge/ci-merge --yaml-config $GITHUB_WORKSPACE/kernel-config/qcom-next.yaml -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n -p | tee $GITHUB_WORKSPACE/merge.log
+          helper="$GITHUB_WORKSPACE/kernel-config/.github/scripts/qcom_next_topics.py"
+          workspace="$GITHUB_WORKSPACE"
 
-      - name: Parse and Add logs
+          cd "$workspace/kernel-config"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          base_sha="$(git rev-parse HEAD)"
+
+          if [ -n "$PR" ]; then
+            active=("$PR")
+          else
+            mapfile -t active < <(jq -r '.[]' <<< "$PR_NUMBERS")
+          fi
+          echo "batch: ${active[*]}"
+
+          # Fetch every PR head once up front.
+          for pr in "${active[@]}"; do
+            git fetch --quiet origin "pull/${pr}/head:pr-${pr}"
+          done
+
+          : > "$workspace/dropped.jsonl"
+          attempt=1
+          limit="${MAX_ATTEMPTS:-5}"
+
+          # Publish the dropped list on every exit path, so a PR that conflicted
+          # is labelled and told why even when the run as a whole fails.
+          emit_dropped() {
+            jq -s -c . "$workspace/dropped.jsonl" > "$workspace/dropped.json"
+            {
+              echo "prs_json=${1}"
+              echo "dropped_json=$(cat "$workspace/dropped.json")"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          while :; do
+            echo "::group::candidate attempt ${attempt}"
+
+            # ---- rebuild kernel-config from base with the surviving PRs ----
+            cd "$workspace/kernel-config"
+            git checkout --quiet --detach "$base_sha"
+            : > "$workspace/prs.jsonl"
+            cp qcom-next.yaml "$workspace/before.yaml"
+
+            for pr in "${active[@]}"; do
+              echo "merging kernel-config PR #${pr}"
+              head_sha="$(git rev-parse "pr-${pr}")"
+              git merge --no-ff --no-edit "pr-${pr}"
+              merge_sha="$(git rev-parse HEAD)"
+              cp qcom-next.yaml "$workspace/after.yaml"
+              topics="$(python3 "$helper" diff \
+                "$workspace/before.yaml" "$workspace/after.yaml" | jq -R -s -c 'split("\n") | map(select(length > 0))')"
+              jq -n \
+                --arg number "$pr" \
+                --arg head_sha "$head_sha" \
+                --arg merge_sha "$merge_sha" \
+                --argjson topics "$topics" \
+                '{number: ($number | tonumber), head_sha: $head_sha, merge_sha: $merge_sha, topics: $topics}' \
+                >> "$workspace/prs.jsonl"
+              echo "  topics: $(jq -r 'join(", ")' <<< "$topics")"
+              mv "$workspace/after.yaml" "$workspace/before.yaml"
+            done
+
+            merged_sha="$(git rev-parse HEAD)"
+            jq -s -c . "$workspace/prs.jsonl" > "$workspace/prs.json"
+
+            # ---- automerge the topic branches ------------------------------
+            #
+            # Deliberately without --pass and without --interactive:
+            #   no --interactive : a conflict first gets a chance to be
+            #                      resolved from the rerere cache. Only if that
+            #                      fails is the merge aborted.
+            #   no --pass        : an unresolved conflict aborts the merge and
+            #                      exits non-zero instead of skipping the topic,
+            #                      so a topic can never be silently missing from
+            #                      the candidate.
+            # It therefore stops at the first conflicting topic, which is why
+            # the quarantine loop may need one attempt per conflicting PR.
+            cd "$workspace/kernel-topics"
+            test -f "$workspace/kernel-config/qcom-next.conf"
+            rm -f topic_SHA1 topic_conflict
+            set +e
+            "$workspace/automerge/ci-merge" \
+              --yaml-config "$workspace/kernel-config/qcom-next.yaml" \
+              -t head -i qcom-next \
+              -c https://github.com/sgaud-quic/cache \
+              | tee "$workspace/merge.log"
+            merge_rc="${PIPESTATUS[0]}"
+            set -e
+            echo "ci-merge exit=${merge_rc}"
+
+            # Always parse, so topic_SHA1 reflects whatever did merge.
+            "$workspace/automerge/log-parser.sh" "$workspace/merge.log" || true
+
+            # ---- blame any conflicting topic on its PR ---------------------
+            blame="$(python3 "$helper" blame \
+              --prs "$workspace/prs.json" \
+              --conflicts topic_conflict \
+              --merge-log "$workspace/merge.log")"
+            echo "$blame"
+            echo "::endgroup::"
+
+            conflicts="$(jq -r '.conflicts | length' <<< "$blame")"
+
+            if [ "$merge_rc" -eq 0 ] && [ "$conflicts" -eq 0 ]; then
+              echo "no topic conflicts"
+              break
+            fi
+
+            # Non-zero exit with nothing to blame is not a topic conflict:
+            # a bad tag, an unreachable sha, a fetch failure. Retrying would
+            # not help and dropping a PR would hide it.
+            if [ "$conflicts" -eq 0 ]; then
+              echo "::error title=qcom-next::automerge failed (exit ${merge_rc}) without reporting a conflicting topic. See merge.log; this is not something dropping a PR can fix."
+              emit_dropped "[]"
+              exit 1
+            fi
+
+            # Record whatever was blamed this round up front, so the PRs are
+            # still reported even if the run fails for another reason below.
+            jq -c '.blamed[]' <<< "$blame" >> "$workspace/dropped.jsonl"
+
+            unattributed="$(jq -r '.unattributed | join(", ")' <<< "$blame")"
+            if [ -n "$unattributed" ]; then
+              echo "::error title=qcom-next::topic(s) conflicted but no PR in this batch promoted them: ${unattributed}. The candidate would be missing them, so the run is failed instead."
+              emit_dropped "[]"
+              exit 1
+            fi
+
+            mapfile -t blamed < <(jq -r '.blamed[].number' <<< "$blame")
+            echo "::warning title=qcom-next::dropping conflicting PR(s) from the batch: ${blamed[*]}"
+
+            remaining=()
+            for pr in "${active[@]}"; do
+              keep=1
+              for bad in "${blamed[@]}"; do
+                [ "$pr" = "$bad" ] && keep=0
+              done
+              [ "$keep" = "1" ] && remaining+=("$pr")
+            done
+            active=("${remaining[@]+"${remaining[@]}"}")
+
+            if [ "${#active[@]}" -eq 0 ]; then
+              echo "::error title=qcom-next::every PR in the batch conflicted; nothing left to validate"
+              emit_dropped "[]"
+              exit 1
+            fi
+
+            attempt=$((attempt + 1))
+            if [ "$attempt" -gt "$limit" ]; then
+              echo "::error title=qcom-next::still conflicting after ${limit} attempt(s)"
+              emit_dropped "[]"
+              exit 1
+            fi
+          done
+
+          jq -s -c . "$workspace/dropped.jsonl" > "$workspace/dropped.json"
+
+          {
+            echo "base_sha=$base_sha"
+            echo "merged_sha=$merged_sha"
+            echo "prs_json=$(cat "$workspace/prs.json")"
+            echo "dropped_json=$(cat "$workspace/dropped.json")"
+            echo "attempts=$attempt"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Add logs to kernel-topics
         run: |
           set -euo pipefail
           cd $GITHUB_WORKSPACE/kernel-topics
-          mkdir qcom-next
-          $GITHUB_WORKSPACE/automerge/log-parser.sh $GITHUB_WORKSPACE/merge.log
+          mkdir -p qcom-next
           cp topic_SHA1 qcom-next
+          test -f topic_conflict && cp topic_conflict qcom-next || true
           cp ../merge.log qcom-next/
           sed -i 's/\r$//' qcom-next/merge.log
           sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
@@ -132,7 +277,79 @@ jobs:
           git config user.email "sgaud@qti.qualcomm.com"
           git config user.name  "Salendarsingh Gaud"
           git add qcom-next/merge.log qcom-next/topic_SHA1
+          git add qcom-next/topic_conflict || true
           git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s
+
+      # Runs even when the build failed, so a PR that conflicted is still
+      # labelled and explained rather than silently retried next cycle.
+      - name: Block PRs dropped for a merge conflict
+        if: always() && steps.build.outputs.dropped_json != '' && steps.build.outputs.dropped_json != '[]'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          DROPPED_JSON: ${{ steps.build.outputs.dropped_json }}
+          SURVIVORS_JSON: ${{ steps.build.outputs.prs_json }}
+          BLOCK_LABEL: qcom-next-conflict
+        with:
+          github-token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          script: |
+            const dropped = JSON.parse(process.env.DROPPED_JSON || '[]');
+            const survivors = JSON.parse(process.env.SURVIVORS_JSON || '[]');
+            const label = process.env.BLOCK_LABEL;
+
+            const kept = survivors.map((pr) => `#${pr.number}`).join(', ');
+
+            for (const item of dropped) {
+              const topics = item.topics.map((t) => '`' + t + '`').join(', ');
+              const body = [
+                '<!-- qcom-next-conflict -->',
+                `### Dropped from the qcom-next batch: merge conflict`,
+                '',
+                `Topic branch ${topics} could not be merged into the qcom-next`,
+                'integration branch, so this PR was removed from the batch and the',
+                'candidate was rebuilt without it.',
+                '',
+                kept
+                  ? `The rest of the batch continued: ${kept}.`
+                  : 'No other PR in the batch survived.',
+                '',
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                'Rebase the topic branch to resolve the conflict, then remove the',
+                `\`${label}\` label to let the dispatcher pick this PR up again.`,
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: item.number,
+                body,
+              });
+
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: item.number,
+                  labels: [label],
+                });
+              } catch (error) {
+                core.warning(`could not label #${item.number}: ${error.message}`);
+              }
+            }
+
+            core.summary.addHeading('qcom-next: PRs dropped for merge conflicts', 3);
+            core.summary.addTable([
+              [
+                { data: 'PR', header: true },
+                { data: 'Conflicting topic', header: true },
+              ],
+              ...dropped.map((item) => [
+                `#${item.number}`,
+                item.topics.join(', '),
+              ]),
+            ]);
+            await core.summary.write();
 
       - name: Push the candidate
         id: push
@@ -167,9 +384,9 @@ jobs:
       - name: Store candidate metadata
         id: metadata
         env:
-          PRS_JSON: ${{ steps.merge_prs.outputs.prs_json }}
-          KERNEL_CONFIG_BASE_SHA: ${{ steps.merge_prs.outputs.base_sha }}
-          KERNEL_CONFIG_MERGED_SHA: ${{ steps.merge_prs.outputs.merged_sha }}
+          PRS_JSON: ${{ steps.build.outputs.prs_json }}
+          KERNEL_CONFIG_BASE_SHA: ${{ steps.build.outputs.base_sha }}
+          KERNEL_CONFIG_MERGED_SHA: ${{ steps.build.outputs.merged_sha }}
           CANDIDATE_REF: ${{ steps.push.outputs.ref }}
           CANDIDATE_SHA: ${{ steps.push.outputs.sha }}
         run: |
@@ -198,7 +415,7 @@ jobs:
         continue-on-error: true
         uses: actions/github-script@v7
         env:
-          PRS_JSON: ${{ steps.merge_prs.outputs.prs_json }}
+          PRS_JSON: ${{ steps.build.outputs.prs_json }}
           CANDIDATE_REF: ${{ steps.push.outputs.ref }}
           CANDIDATE_SHA: ${{ steps.push.outputs.sha }}
           S3_KEY: ${{ steps.metadata.outputs.s3_key }}
