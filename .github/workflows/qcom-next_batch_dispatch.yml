@@ -1,0 +1,168 @@
+---
+# Watches open qcom-next.yaml promotion PRs and dispatches them in batches.
+#
+# Batching is driven by qcom-next-batching.yaml: PRs are only combined when
+# every topic they promote sits in the same safety zone and no pair of topics is
+# listed as conflicting.
+#
+# Only one pipeline runs at a time. The planner refuses to dispatch while any
+# workflow in defaults.block_on_workflows still has a queued, waiting or running
+# run, so the next batch starts only after the previous one has finished.
+#
+# Every PR in a dispatched batch is labelled. A labelled PR is never picked up
+# again until the label is removed by hand.
+name: qcom-next batch dispatch
+
+on:
+  schedule:
+    # Every 30 minutes. Cron is UTC.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Plan batches and report them without dispatching.
+        type: boolean
+        required: false
+        default: false
+      max_dispatches:
+        description: Override how many batches to dispatch in this run.
+        type: string
+        required: false
+        default: ""
+      only_prs:
+        description: Restrict planning to these PR numbers.
+        type: string
+        required: false
+        default: ""
+      base_branch:
+        description: >
+          Base branch to scan for promotion PRs. Defaults to the repository
+          default branch. Set this when testing the dispatcher from a
+          non-default branch whose PRs target somewhere else.
+        type: string
+        required: false
+        default: ""
+      ignore_in_flight:
+        description: Dispatch even when an earlier pipeline is still running.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+
+# Never plan twice at once; a second planner would read stale labels and could
+# dispatch the same PR again.
+concurrency:
+  group: qcom-next-batch-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Plan and dispatch qcom-next batches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+
+      - name: Plan batches
+        id: plan
+        uses: ./.github/actions/qcom_next_batch
+        with:
+          token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          config_file: qcom-next-batching.yaml
+          max_dispatches: ${{ inputs.max_dispatches }}
+          only_prs: ${{ inputs.only_prs }}
+          base_branch: ${{ inputs.base_branch }}
+          ignore_in_flight: ${{ inputs.ignore_in_flight }}
+
+      - name: Dispatch batch
+        id: dispatch
+        if: steps.plan.outputs.has_batches == 'true' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          BATCHES: ${{ steps.plan.outputs.batches }}
+          WORKFLOW: qcom-next_topic_update_manual.yml
+        run: |
+          set -euo pipefail
+
+          # Dispatch on the same ref this dispatcher is running from, so a run
+          # started from a branch exercises that branch's pipeline definition.
+          # On the schedule that is always the default branch. The target
+          # workflow must still exist on the default branch to be dispatchable,
+          # which is a GitHub requirement for workflow_dispatch.
+          echo "dispatching on ref ${GITHUB_REF_NAME}"
+
+          echo "$BATCHES" | jq -c '.[]' | while read -r batch; do
+            prs="$(jq -r '.prs | join(",")' <<< "$batch")"
+            zone="$(jq -r '.zone' <<< "$batch")"
+
+            echo "Dispatching zone=${zone} prs=${prs}"
+            gh workflow run "$WORKFLOW" \
+              --ref "${GITHUB_REF_NAME}" \
+              -f pr="$prs"
+          done
+
+      - name: Label and comment dispatched PRs
+        if: steps.dispatch.outcome == 'success'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          BATCHES: ${{ steps.plan.outputs.batches }}
+          CONFIG_FILE: qcom-next-batching.yaml
+        with:
+          github-token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          script: |
+            const fs = require('fs');
+            const batches = JSON.parse(process.env.BATCHES || '[]');
+
+            // Read dispatched_label without pulling in a YAML parser.
+            const config = fs.readFileSync(process.env.CONFIG_FILE, 'utf8');
+            const match = config.match(/^\s*dispatched_label:\s*(\S+)/m);
+            const label = match ? match[1] : '';
+
+            for (const batch of batches) {
+              for (const number of batch.prs) {
+                const peers = batch.prs.filter((n) => n !== number);
+                const body = [
+                  '<!-- qcom-next-batch-dispatch -->',
+                  `Dispatched for qcom-next validation in safety zone \`${batch.zone}\`.`,
+                  '',
+                  `Topics: ${batch.topics.map((t) => '`' + t + '`').join(', ')}`,
+                  peers.length
+                    ? `Batched with: ${peers.map((n) => '#' + n).join(', ')}`
+                    : 'Validated on its own.',
+                  '',
+                  label
+                    ? `This PR will not be dispatched again while the \`${label}\` label is present. Remove it to requeue.`
+                    : '',
+                ].filter(Boolean).join('\n');
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: number,
+                  body,
+                });
+
+                if (label) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: number,
+                    labels: [label],
+                  });
+                }
+              }
+            }
+
+      - name: Upload plan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qcom-next-batch-plan
+          path: qcom-next-batch
+          if-no-files-found: ignore
+          retention-days: 14
