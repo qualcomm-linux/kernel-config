@@ -137,8 +137,8 @@ topics:
   - name: tech/all/dt/qcs6490
     repo: "https://github.com/qualcomm-linux/kernel-topics.git"
     branch: tech/all/dt/qcs6490
-    sha: 04fd975053b6ed0c653dd70b22932d6edcce755d
-    tag: tech/all/dt/qcs6490-7.4-rc1-20261117
+    sha: 334274b2af1909368d1994b33a2c7b08b653d0ae
+    tag: tech/all/dt/qcs6490-7.4-rc1-20261120
   - name: tech/all/dt/qcs9100
     repo: "https://github.com/qualcomm-linux/kernel-topics.git"
     branch: tech/all/dt/qcs9100
