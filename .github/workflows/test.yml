@@ -203,51 +203,57 @@ jobs:
       - name: Fetch LAVA results JSON
         if: (success() || failure()) && steps.submit_job.outputs.job_id != ''
         id: fetch_results
+        env:
+          TEST_BUILD_TYPE: ${{ inputs.build_type }}
+          TEST_MACHINE: ${{ matrix.rootfs_matrix.machine }}
+          TEST_IMAGE_TYPE: ${{ inputs.image_type }}
         run: |
-          set -e
-          MACHINE="${{ matrix.rootfs_matrix.machine }}"
-          IMAGE_TYPE="${{ inputs.image_type }}"
-          SUITE_NAME="LAVA-${MACHINE}"
-          IN="results.json"
-
+          set -euo pipefail
           mkdir -p lava-results
-
-          curl -s "https://lava-oss.qualcomm.com/api/v0.2/jobs/$JOB_ID/tests/?limit=500" > results.json
-          echo "Downloaded results to results.json"
-          jq '.[0] ? // . | length' results.json || true
-
-          # Determine the suite id for the premerge test suite (anything that is not 'lava')
-          SUITE_ID=$(curl -s "https://lava-oss.qualcomm.com/api/v0.2/jobs/$JOB_ID/suites/" \
-            | jq -r '.results[] | select(.name != "lava") | .id')
-          echo "Premerge suite id: $SUITE_ID"
-
-          jq --argjson suite_id "${SUITE_ID}" '
-            (if type=="object" and .results then .results else . end)
-              | map(select(.suite == $suite_id))
-              | map(select(.result == "pass" or .result == "fail" or .result == "skip" or .result == "error"))
-              | map({
-                      name: .name,
-                      result: .result
-                  })
-              ' "$IN" > "lava-results/Tests-${{ inputs.build_type }}-${MACHINE}-${IMAGE_TYPE}.json"
+          export_path="lava-results/Tests-${TEST_BUILD_TYPE}-${TEST_MACHINE}-${TEST_IMAGE_TYPE}.json"
+          if python3 scripts/lava_results.py \
+              --job-id "$JOB_ID" \
+              --definition ../job_render/renders/lava_job_definition.yaml \
+              --output-dir lava-results/evidence \
+              --export "$export_path"; then
+            echo "summary=:heavy_check_mark: Lava testcase results complete with no failures." >> "$GITHUB_OUTPUT"
+          else
+            echo "summary=:x: Lava testcase failure or incomplete result evidence." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
 
       - name: Update summary
         if: success() || failure()
         shell: bash
+        env:
+          JOB_CREATION_CONCLUSION: ${{ steps.create_job_definition.conclusion }}
+          SUBMISSION_CONCLUSION: ${{ steps.submit_job.conclusion }}
+          SUBMISSION_SUMMARY: ${{ steps.submit_job.outputs.summary }}
+          COMPLETION_CONCLUSION: ${{ steps.check_job.conclusion }}
+          COMPLETION_SUMMARY: ${{ steps.check_job.outputs.summary }}
+          TESTCASE_SUMMARY: ${{ steps.fetch_results.outputs.summary }}
+          LAVA_JOB_URL: ${{ steps.submit_job.outputs.job_url }}
+          LAVA_JOB_ID: ${{ steps.submit_job.outputs.job_id }}
+          TEST_MACHINE: ${{ matrix.rootfs_matrix.machine }}
+          TEST_IMAGE_TYPE: ${{ inputs.image_type }}
         run: |
-          if [ "${{ steps.create_job_definition.conclusion }}" == 'failure' ]; then
+          if [ "$JOB_CREATION_CONCLUSION" == 'failure' ]; then
             status=":x: Test job failed"
-          elif [ "${{ steps.submit_job.conclusion }}" == 'failure' ]; then
-            status="${{ steps.submit_job.outputs.summary }}"
+          elif [ "$SUBMISSION_CONCLUSION" == 'failure' ]; then
+            status="$SUBMISSION_SUMMARY"
             job_url=""
             job_id=""
           else
-            status="${{ steps.check_job.outputs.summary }}"
-            job_url="${{ steps.submit_job.outputs.job_url }}"
-            job_id="${{ steps.submit_job.outputs.job_id }}"
+            if [ "$COMPLETION_CONCLUSION" == 'success' ]; then
+              status="$TESTCASE_SUMMARY"
+            else
+              status="$COMPLETION_SUMMARY"
+            fi
+            job_url="$LAVA_JOB_URL"
+            job_id="$LAVA_JOB_ID"
           fi
-          JOB_INFO="- [${{ inputs.image_type }} Job $job_id on ${{ matrix.rootfs_matrix.machine }}]($job_url)"
-          echo -e "$JOB_INFO" > job_info.md
+          JOB_INFO="- [$TEST_IMAGE_TYPE Job $job_id on $TEST_MACHINE]($job_url)"
+          printf '%s: %s\n' "$JOB_INFO" "$status" > job_info.md
 
       - name: Upload Job Info Artifacts
         if: always()
@@ -262,3 +268,10 @@ jobs:
         with:
           name: Tests-${{ inputs.build_type }}-${{ matrix.rootfs_matrix.machine }}-${{ inputs.image_type }}
           path: lava-results/*.json
+
+      - name: Upload LAVA result evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAVA-Evidence-${{ inputs.build_type }}-${{ matrix.rootfs_matrix.machine }}-${{ inputs.image_type }}
+          path: lava-results/evidence/
