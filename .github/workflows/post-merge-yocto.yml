@@ -50,6 +50,7 @@ jobs:
     with:
       branch: ${{ inputs.ref }}
       build_type: "yocto"
+      repo: ${{ inputs.repo }}
 
   build_yocto:
     name: Build Yocto

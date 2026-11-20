@@ -16,6 +16,13 @@ inputs:
     required: false
     default: ""
 
+  repo:
+    description: >
+      Target repository. Branches of qualcomm-linux/kernel-topics are topic
+      branches and take their test enablement from ci/TOPIC_BRANCHES.json.
+    required: false
+    default: ""
+
 outputs:
   build_matrix:
     description: Build matrix
@@ -37,6 +44,14 @@ outputs:
     description: Rootfs matrix for Yocto
     value: ${{ steps.set-matrix.outputs.rootfs_matrix }}
 
+  lava_enabled:
+    description: Whether LAVA tests are enabled for the branch
+    value: ${{ steps.set-matrix.outputs.lava_enabled }}
+
+  axiom_enabled:
+    description: Whether Axiom tests are enabled for the branch
+    value: ${{ steps.set-matrix.outputs.axiom_enabled }}
+
 runs:
   using: "composite"
   steps:
@@ -46,6 +61,7 @@ runs:
       env:
         INPUT_BRANCH: ${{ inputs.branch }}
         INPUT_BUILD_TYPE: ${{ inputs.build_type }}
+        INPUT_REPO: ${{ inputs.repo }}
       with:
         script: |
           const fs = require('fs');
@@ -87,11 +103,22 @@ runs:
           if (inputBranch !== branch) {
             console.log(`Using ${branch} matrix for candidate branch ${inputBranch}`);
           }
+          // Topic branches live in qualcomm-linux/kernel-topics, and any branch
+          // MACHINES.json does not list is treated as one as well. They build on
+          // every target and only run tests when ci/TOPIC_BRANCHES.json enables
+          // them. Release branches keep their per-target "branches" filter.
+          const releaseBranches = new Set();
+          for (const { branches } of Object.values(targets)) {
+            (branches || []).forEach((name) => releaseBranches.add(name));
+          }
+          const isTopicRepo = (process.env.INPUT_REPO || "") === 'qualcomm-linux/kernel-topics';
+          const isReleaseBranch = !isTopicRepo && (!branch || releaseBranches.has(branch));
+
           // A target without "build_types" stays enabled for every build type.
           const buildType = (process.env.INPUT_BUILD_TYPE || "").toLowerCase();
           const rootfs_matrix = Object.values(targets)
             .filter(({ rootfs }) => rootfs && rootfs.trim() !== '')
-            .filter(({ branches }) => !branch || !branches || branches.includes(branch))
+            .filter(({ branches }) => !isReleaseBranch || !branch || !branches || branches.includes(branch))
             .filter(({ build_types }) => !buildType || !build_types || build_types.includes(buildType))
             .map(({ machine, rootfs, firmwareid, lavaname, flash_type, hypervisor, storage }) => ({
               machine,
@@ -104,6 +131,26 @@ runs:
             }));
           core.setOutput('rootfs_matrix', JSON.stringify(rootfs_matrix));
           console.log("Rootfs Matrix:", rootfs_matrix);
+
+          // Test enablement: release branches keep LAVA and Axiom enabled, topic
+          // branches opt in through ci/TOPIC_BRANCHES.json and build only by
+          // default.
+          const topicConfigPath = path.join(process.env.GITHUB_WORKSPACE, 'ci', 'TOPIC_BRANCHES.json');
+          let topicBranches = {};
+          if (fs.existsSync(topicConfigPath)) {
+            try {
+              topicBranches = JSON.parse(fs.readFileSync(topicConfigPath, 'utf-8'));
+            } catch (err) {
+              core.setFailed(`Failed to parse TOPIC_BRANCHES.json: ${err.message}`);
+              return;
+            }
+          }
+          const topicConfig = topicBranches[branch] || {};
+          const lavaEnabled = isReleaseBranch || topicConfig.lava === true;
+          const axiomEnabled = isReleaseBranch || topicConfig.axiom === true;
+          core.setOutput('lava_enabled', String(lavaEnabled));
+          core.setOutput('axiom_enabled', String(axiomEnabled));
+          console.log(`Branch ${branch || '(none)'}: release=${isReleaseBranch} lava=${lavaEnabled} axiom=${axiomEnabled}`);
 
     - name: Set Ubuntu Config Matrix
       id: ubuntu-matrix

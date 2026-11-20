@@ -70,6 +70,7 @@ jobs:
     with:
       branch: ${{ inputs.ref }}
       build_type: "kbdev"
+      repo: ${{ inputs.repo }}
 
   build:
     needs: [loading, init-status]
@@ -97,6 +98,7 @@ jobs:
   check_run:
     runs-on: ubuntu-latest
     needs: [init-status, loading, build]
+    if: needs.loading.outputs.axiom_enabled == 'true'
     steps:
       - name: Post check run
         uses: qualcomm-linux/kernel-config/.github/actions/check_run@main
@@ -108,7 +110,7 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    if: inputs.repo == 'qualcomm-linux/kernel'
+    if: (inputs.repo == 'qualcomm-linux/kernel' || inputs.repo == 'qualcomm-linux/kernel-topics') && needs.loading.outputs.lava_enabled == 'true'
     needs: [init-status, loading, build]
     uses: ./.github/workflows/test.yml
     secrets: inherit

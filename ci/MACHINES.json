@@ -11,7 +11,7 @@
     "storage": "ufs",
     "hypervisor": "kvm",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain", "tech/bus/peripherals"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "qcs9100-ride-r3": {
     "machine": "qcs9100-ride-r3",
@@ -25,7 +25,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain", "tech/all/dt/qcs9100"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "qcs8300-ride": {
     "machine": "qcs8300-ride",
@@ -39,7 +39,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "sm8750-mtp": {
     "machine": "sm8750-mtp",
@@ -53,7 +53,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain"]
+    "branches": ["qcom-next-staging"]
   },
   "lemans-evk": {
     "machine": "lemans-evk",
@@ -67,7 +67,7 @@
     "storage": "ufs",
     "hypervisor": "kvm",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain", "tech/bus/peripherals", "tech/all/dt/qcs9100"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "monaco-evk": {
     "machine": "monaco-evk",
@@ -81,7 +81,7 @@
     "storage": "ufs",
     "hypervisor": "kvm",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain", "tech/bus/peripherals"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "qcs615-adp-air": {
     "machine": "qcs615-ride",
@@ -95,7 +95,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "kaanapali-mtp": {
     "machine": "kaanapali-mtp",
@@ -109,7 +109,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain"]
+    "branches": ["qcom-next-staging"]
   },
   "hamoa-iot-evk": {
     "machine": "hamoa-iot-evk",
@@ -123,7 +123,7 @@
     "storage": "spinor",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/mproc/rpmsg", "tech/mproc/all", "tech/net/qrtr", "tech/storage/all", "tech/storage/phy", "tech/bus/pci/pwrctl", "tech/bus/pci/phy", "tech/bus/pci/mhi", "tech/bus/pci/all", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect", "tech/pm/power", "tech/pm/thermal", "tech/pm/pmdomain"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "glymur-crd": {
     "machine": "glymur-crd",
@@ -137,7 +137,7 @@
     "storage": "spinor",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-7.3", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+    "branches": ["qcom-next-staging", "qcom-7.3"]
   },
   "qrb2210-rb1": {
     "machine": "qrb2210-rb1",
@@ -151,7 +151,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "purwa-iot-evk": {
     "machine": "purwa-iot-evk",
@@ -165,7 +165,7 @@
     "storage": "spinor",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "shikra-evk": {
     "machine": "shikra-iqs-evk",
@@ -179,7 +179,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y", "tech/pmic/supply", "tech/pmic/regulator", "tech/pmic/misc", "tech/pmic/mfd", "tech/pmic/backlight", "tech/bus/usb/phy", "tech/bus/usb/dwc", "tech/bus/usb/gadget", "tech/bsp/clk", "tech/bsp/interconnect"]
+    "branches": ["qcom-next-staging", "qcom-6.18.y"]
   },
   "hawi-mtp": {
     "machine": "hawi-mtp",
