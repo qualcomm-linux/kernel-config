@@ -95,6 +95,10 @@ jobs:
           # which is a GitHub requirement for workflow_dispatch.
           echo "dispatching on ref ${GITHUB_REF_NAME}"
 
+          # pr_numbers is the input declared by qcom-next_topic_update_manual.yml.
+          # It must match that workflow exactly: the dispatch API rejects an
+          # unknown name with HTTP 422 "Unexpected inputs provided". A comma
+          # separated list is accepted; that workflow splits on /[\s,]+/.
           echo "$BATCHES" | jq -c '.[]' | while read -r batch; do
             prs="$(jq -r '.prs | join(",")' <<< "$batch")"
             zone="$(jq -r '.zone' <<< "$batch")"
@@ -102,7 +106,7 @@ jobs:
             echo "Dispatching zone=${zone} prs=${prs}"
             gh workflow run "$WORKFLOW" \
               --ref "${GITHUB_REF_NAME}" \
-              -f pr="$prs"
+              -f pr_numbers="$prs"
           done
 
       - name: Label and comment dispatched PRs
