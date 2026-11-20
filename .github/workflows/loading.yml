@@ -16,6 +16,12 @@ on:
         type: string
         required: false
         default: ""
+
+      repo:
+        description: Target repository, used to detect topic branches
+        type: string
+        required: false
+        default: ""
     outputs:
       build_matrix:
         description: Build matrix
@@ -37,6 +43,14 @@ on:
         description: Rootfs matrix for Yocto
         value: ${{ jobs.loading.outputs.rootfs_matrix }}
 
+      lava_enabled:
+        description: Whether LAVA tests are enabled for the branch
+        value: ${{ jobs.loading.outputs.lava_enabled }}
+
+      axiom_enabled:
+        description: Whether Axiom tests are enabled for the branch
+        value: ${{ jobs.loading.outputs.axiom_enabled }}
+
 jobs:
   loading:
     runs-on: ubuntu-latest
@@ -46,6 +60,8 @@ jobs:
       bootbins: ${{ steps.loading.outputs.bootbins }}
       ubuntu_matrix: ${{ steps.loading.outputs.ubuntu_matrix }}
       rootfs_matrix: ${{ steps.loading.outputs.rootfs_matrix }}
+      lava_enabled: ${{ steps.loading.outputs.lava_enabled }}
+      axiom_enabled: ${{ steps.loading.outputs.axiom_enabled }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -56,3 +72,4 @@ jobs:
         with:
           branch: ${{ inputs.branch }}
           build_type: ${{ inputs.build_type }}
+          repo: ${{ inputs.repo }}
