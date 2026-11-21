@@ -1,7 +1,7 @@
 baseline:
   repo: "https://github.com/qualcomm-linux-stg/kernel.git"
-  tag: v7.4-rc1
-  sha: 6628e7d4c6b25c8d18f1345e3a20d21829aae7e4
+  tag: v7.4-rc3
+  sha: aebb7274476403040d582c61478df8f4a7bf9cd3
 
 topics:
   - name: tech/bsp/clk
