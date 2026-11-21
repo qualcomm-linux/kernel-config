@@ -179,6 +179,8 @@ jobs:
             # It therefore stops at the first conflicting topic, which is why
             # the quarantine loop may need one attempt per conflicting PR.
             cd "$workspace/kernel-topics"
+            git config user.email "sgaud@qti.qualcomm.com"
+            git config user.name  "Salendarsingh Gaud"
             test -f "$workspace/kernel-config/qcom-next.conf"
             rm -f topic_SHA1 topic_conflict
             set +e
@@ -277,8 +279,6 @@ jobs:
           sed -i 's/\r$//' qcom-next/merge.log
           sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
           sed -i -E 's#https://[^/@[:space:]]+@github\.com/#https://***@github.com/#g' qcom-next/merge.log
-          git config user.email "sgaud@qti.qualcomm.com"
-          git config user.name  "Salendarsingh Gaud"
           git add qcom-next/merge.log qcom-next/topic_SHA1
           git add qcom-next/topic_conflict || true
           git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s

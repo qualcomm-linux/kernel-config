@@ -71,6 +71,8 @@ jobs:
         run:  |
           set -euo pipefail
           cd $GITHUB_WORKSPACE/kernel-topics
+          git config user.email "sgaud@qti.qualcomm.com"
+          git config user.name  "Salendarsingh Gaud"
           test -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf
           $GITHUB_WORKSPACE/automerge/ci-merge -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/sgaud-quic/cache -n | tee $GITHUB_WORKSPACE/merge.log
 
@@ -85,8 +87,6 @@ jobs:
           sed -i 's/\r$//' qcom-next/merge.log
           sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
           sed -i -E 's#https://[^/@[:space:]]+@github\.com/#https://***@github.com/#g' qcom-next/merge.log
-          git config user.email "sgaud@qti.qualcomm.com"
-          git config user.name  "Salendarsingh Gaud"
           git add qcom-next/merge.log qcom-next/topic_SHA1
           git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s
 
