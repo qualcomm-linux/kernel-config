@@ -39,9 +39,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Candidates live in the staging kernel repo for validation before publish.
-  KERNEL_REPO: qualcomm-linux/kernel
-  TOPICS_REPO: qualcomm-linux/kernel-topics
+  # Experiment wiring: both the baseline kernel and the topic branches come
+  # from the staging organisation, and the candidate is pushed there too, so a
+  # run cannot touch production. TOPICS_CONFIG must pin the same topics to the
+  # staging topic repository, which is what qcom-next-stg.yaml does.
+  KERNEL_REPO: qualcomm-linux-stg/kernel
+  TOPICS_REPO: qualcomm-linux-stg/kernel-topics
+  TOPICS_CONFIG: qcom-next-stg.yaml
   AUTOMERGE_REPO: sgaud-quic/automerge
   S3_BUCKET: qli-prd-kernel-gh-artifacts
 
@@ -142,14 +146,14 @@ jobs:
             cd "$workspace/kernel-config"
             git checkout --quiet --detach "$base_sha"
             : > "$workspace/prs.jsonl"
-            cp qcom-next.yaml "$workspace/before.yaml"
+            cp "$TOPICS_CONFIG" "$workspace/before.yaml"
 
             for pr in "${active[@]}"; do
               echo "merging kernel-config PR #${pr}"
               head_sha="$(git rev-parse "pr-${pr}")"
               git merge --no-ff --no-edit "pr-${pr}"
               merge_sha="$(git rev-parse HEAD)"
-              cp qcom-next.yaml "$workspace/after.yaml"
+              cp "$TOPICS_CONFIG" "$workspace/after.yaml"
               topics="$(python3 "$helper" diff \
                 "$workspace/before.yaml" "$workspace/after.yaml" | jq -R -s -c 'split("\n") | map(select(length > 0))')"
               jq -n \
@@ -179,11 +183,15 @@ jobs:
             # It therefore stops at the first conflicting topic, which is why
             # the quarantine loop may need one attempt per conflicting PR.
             cd "$workspace/kernel-topics"
-            test -f "$workspace/kernel-config/qcom-next.conf"
+            config="$workspace/kernel-config/${TOPICS_CONFIG}"
+            if [ ! -f "$config" ]; then
+              echo "::error title=qcom-next::${TOPICS_CONFIG} is missing from kernel-config. It must be committed, not just present locally, or the checkout will not contain it."
+              exit 1
+            fi
             rm -f topic_SHA1 topic_conflict
             set +e
             "$workspace/automerge/ci-merge" \
-              --yaml-config "$workspace/kernel-config/qcom-next.yaml" \
+              --yaml-config "$config" \
               -t head -i qcom-next \
               -c https://github.com/sgaud-quic/cache \
               | tee "$workspace/merge.log"
@@ -477,7 +485,10 @@ jobs:
     uses: ./.github/workflows/pre_merge.yml
     secrets: inherit
     with:
-      repo: qualcomm-linux/kernel
+      # Must match KERNEL_REPO above: this is where the candidate was pushed.
+      # The env context is not available in a reusable workflow's `with`, so
+      # the value is repeated rather than referenced.
+      repo: qualcomm-linux-stg/kernel
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
       pr: "0"
@@ -489,7 +500,8 @@ jobs:
     uses: ./.github/workflows/pre-merge-yocto.yml
     secrets: inherit
     with:
-      repo: qualcomm-linux/kernel
+      # Must match KERNEL_REPO above, as for premerge.
+      repo: qualcomm-linux-stg/kernel
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
 

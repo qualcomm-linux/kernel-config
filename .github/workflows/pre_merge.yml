@@ -110,7 +110,15 @@ jobs:
           PVK: ${{ secrets.PVK }}
 
   test:
-    if: (inputs.repo == 'qualcomm-linux/kernel' || inputs.repo == 'qualcomm-linux/kernel-topics') && needs.loading.outputs.lava_enabled == 'true'
+    # The staging mirrors are listed alongside production so an experiment run
+    # against qualcomm-linux-stg still gets LAVA coverage instead of silently
+    # building only.
+    if: >
+      (inputs.repo == 'qualcomm-linux/kernel'
+       || inputs.repo == 'qualcomm-linux/kernel-topics'
+       || inputs.repo == 'qualcomm-linux-stg/kernel'
+       || inputs.repo == 'qualcomm-linux-stg/kernel-topics')
+      && needs.loading.outputs.lava_enabled == 'true'
     needs: [init-status, loading, build]
     uses: ./.github/workflows/test.yml
     secrets: inherit

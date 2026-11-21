@@ -111,7 +111,14 @@ runs:
           for (const { branches } of Object.values(targets)) {
             (branches || []).forEach((name) => releaseBranches.add(name));
           }
-          const isTopicRepo = (process.env.INPUT_REPO || "") === 'qualcomm-linux/kernel-topics';
+          // Both the production topic repository and its staging mirror hold
+          // topic branches, so an experiment run against staging is classified
+          // the same way instead of being mistaken for a release branch.
+          const topicRepos = new Set([
+            'qualcomm-linux/kernel-topics',
+            'qualcomm-linux-stg/kernel-topics',
+          ]);
+          const isTopicRepo = topicRepos.has(process.env.INPUT_REPO || "");
           const isReleaseBranch = !isTopicRepo && (!branch || releaseBranches.has(branch));
 
           // A target without "build_types" stays enabled for every build type.
