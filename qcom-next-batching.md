@@ -39,8 +39,10 @@ For each open PR that modifies `qcom-next.yaml` it:
    is ignored.
 2. Drops PRs that are not ready: draft, unmergeable, carrying a skip label, or
    already dispatched.
-3. Assigns each PR to a safety zone and groups PRs that share one.
-4. Dispatches **one** batch as a run of `qcom-next_topic_update_manual.yml`.
+3. Reads any `Depends-on:` trailers and locks each PR together with its
+   prerequisites into a single indivisible unit.
+4. Assigns each unit to a safety zone and groups units that share one.
+5. Dispatches **one** batch as a run of `qcom-next_topic_update_manual.yml`.
 
 ### The rules
 
@@ -59,9 +61,44 @@ For each open PR that modifies `qcom-next.yaml` it:
    conflict. They are always split.
 6. **Unknown topics run solo.** A topic absent from the config is never
    silently batched, so adding a topic to `qcom-next.conf` is safe by default.
+7. **`Depends-on:` beats every rule above.** PRs linked by a dependency are
+   always validated in the same batch, even across zones.
 
 Zones are matched in file order and the first match wins, which is how
 `tech/mm/camss` escapes the `tech/mm/*` red zone below it.
+
+### Declaring a dependency
+
+A promotion PR that cannot be validated on its own declares its prerequisites in
+the PR body:
+
+```
+Depends-on: #412
+Depends-on: #398, #401
+```
+
+Bare numbers, `#`-prefixed numbers and full pull request URLs are all accepted,
+and several PRs may be listed on one line or across several lines.
+
+The planner then guarantees:
+
+- **One batch, any zone.** The dependency is pulled into the same batch as the
+  PR that declares it, even when their topics belong to different safety zones,
+  even when one of those zones is `solo`, and even when the resulting batch
+  exceeds `max_batch_size`. The group is never split.
+- **Transitive.** If #A depends on #B and #B depends on #C, all three go out
+  together.
+- **Pulled in regardless of filters.** A dependency is added to the batch even
+  when `only_prs` did not name it.
+- **All or nothing.** If any PR in the group is not dispatchable — draft,
+  unmergeable, already dispatched, closed without merging, targeting another
+  base branch, or not a promotion PR — the entire group is held back and the
+  reason is listed under *Skipped PRs* in the run summary. Nothing is validated
+  without its dependency.
+- **Merged dependencies are ignored.** Once a dependency is merged it is part of
+  the base branch, so the dependent PR is free to go out by itself.
+
+A batch formed across zones by a dependency is reported with the zone `depends`.
 
 ### One pipeline at a time
 
@@ -458,6 +495,15 @@ fewer pipeline runs but harder failure attribution.
 
 - **Throughput is bounded by the pipeline, not the cron.** One batch at a time
   means a backlog of solo topics drains slowly.
+
+- **`Depends-on:` bypasses the safety zones by design.** A dependency group is
+  validated as one batch even when its topics are known to overlap, so failure
+  attribution inside such a batch is weaker than for a zoned batch. Declare a
+  dependency only when the PRs genuinely cannot be validated apart.
+
+- **A blocked dependency stalls its dependents.** While a prerequisite is draft,
+  unmergeable or already dispatched, every PR depending on it waits. Check the
+  *Skipped PRs* list in the dispatcher summary if a PR is not going out.
 
 - **Five topics currently carry no work.** `tech/debug/rdbg`, `tech/mm/phy`,
   `tech/storage/nvmem`, `tech/virt/gunyah` and `tech/mproc/all` are ancestors

@@ -18,6 +18,11 @@
 #      when both topics are in the same zone.
 #   5. A topic that is not listed in any zone is treated as solo. New topics are
 #      therefore safe by default and must be classified explicitly to be batched.
+#   6. `Depends-on: #<pr>` in a PR body overrides the zone rules: the named PRs
+#      are placed in the same batch even when their topics sit in different
+#      zones, would be solo, or exceed max_batch_size. Dependencies are followed
+#      transitively, and if any member of the group cannot be dispatched the
+#      whole group waits. A dependency that is already merged is ignored.
 #
 # Zone membership accepts exact topic branch names and fnmatch globs. Globs are
 # deliberately broad so a newly added sibling topic lands in the right zone.
