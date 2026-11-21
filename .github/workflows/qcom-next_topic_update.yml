@@ -276,14 +276,43 @@ jobs:
           cd $GITHUB_WORKSPACE/kernel-topics
           mkdir -p qcom-next
           cp topic_SHA1 qcom-next
-          test -f topic_conflict && cp topic_conflict qcom-next || true
           cp ../merge.log qcom-next/
+
+          # Only record topic_conflict when it actually names a conflicting
+          # topic. log-parser.sh writes a "Name / SHA" header even when nothing
+          # conflicted, and without --pass automerge may not write the file at
+          # all, so test the data rows rather than the file's existence. The
+          # same header filter as qcom_next_topics.py read_conflicts() is used.
+          # A clean candidate must also drop any stale copy inherited from the
+          # baseline tree, otherwise the tag would claim a conflict that this
+          # run did not hit.
+          conflict_rows=0
+          if [ -f topic_conflict ]; then
+            conflict_rows="$(awk 'NF && $1 != "Name" && $1 !~ /^-/' topic_conflict | wc -l)"
+          fi
+          echo "topic_conflict data rows: ${conflict_rows}"
+
+          # The pinned config that produced this candidate, recorded under a
+          # fixed name so consumers do not have to know which config a run used.
+          # This commit is the tip that gets pushed as the candidate and later
+          # published to qcom-next, so the manifest lands inside every qcom-next
+          # tag. Unlike topic_SHA1 it carries the per-topic `tag`, which is what
+          # a promotion diff needs to report only the topics whose pin actually
+          # changed.
+          cp "$GITHUB_WORKSPACE/kernel-config/qcom-next.yaml" qcom-next/topics.yaml
+
           sed -i 's/\r$//' qcom-next/merge.log
           sed -i -E 's#https://x-access-token:[^/@[:space:]]+@github\.com/#https://x-access-token:***@github.com/#g' qcom-next/merge.log
           sed -i -E 's#https://[^/@[:space:]]+@github\.com/#https://***@github.com/#g' qcom-next/merge.log
-          git add qcom-next/merge.log qcom-next/topic_SHA1
-          git add qcom-next/topic_conflict || true
-          git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file and topic_SHA1 file" -s
+          git add qcom-next/merge.log qcom-next/topic_SHA1 qcom-next/topics.yaml
+          if [ "$conflict_rows" -gt 0 ]; then
+            cp topic_conflict qcom-next/
+            git add qcom-next/topic_conflict
+          else
+            rm -f qcom-next/topic_conflict
+            git rm --cached --ignore-unmatch --quiet qcom-next/topic_conflict
+          fi
+          git commit -m "Add qcom-next log files for $(date '+%Y%m%d')" -m "Adding merge log file, topic_SHA1 file and topics.yaml pin manifest" -s
 
       # Runs even when the build failed, so a PR that conflicted is still
       # labelled and explained rather than silently retried next cycle.
@@ -470,6 +499,7 @@ jobs:
             merge.log
             kernel-topics/qcom-next/merge.log
             kernel-topics/qcom-next/topic_SHA1
+            kernel-topics/qcom-next/topics.yaml
           if-no-files-found: warn
           retention-days: 14
 
