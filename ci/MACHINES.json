@@ -151,7 +151,7 @@
     "storage": "ufs",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging", "qcom-6.18.y"]
+    "branches": []
   },
   "purwa-iot-evk": {
     "machine": "purwa-iot-evk",
