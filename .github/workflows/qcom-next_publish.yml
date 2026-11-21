@@ -87,6 +87,139 @@ jobs:
             git merge --no-ff --no-edit "pr-${pr}"
           done
 
+      # Merged before publishing, deliberately. qcom-next.yaml is what the next
+      # candidate is built from, so the only unrepresentable state is qcom-next
+      # carrying topics that the merged pins do not describe: the next candidate
+      # would be built from the old pins and force-push qcom-next backwards,
+      # silently dropping the promotion. The reverse, pins merged without a
+      # publish, is the normal transient state between batches and is carried
+      # forward by the next candidate, so failing here is safe to leave alone.
+      #
+      # A PR that merges and a PR that does not leaves a subset of the pins
+      # merged. That is still consistent, so merged PRs are never reverted; only
+      # the unmerged ones are requeued below.
+      - name: Merge recorded kernel-config PRs
+        id: merge_prs
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          PRS_JSON: ${{ steps.metadata.outputs.prs_json }}
+        run: |
+          set -euo pipefail
+
+          body_file="${{ runner.temp }}/merge-response.json"
+          merged=()
+          failed=()
+
+          mapfile -t prs < <(jq -r '.[].number' <<< "$PRS_JSON")
+          for pr in "${prs[@]}"; do
+            payload="$(jq -n \
+              --arg title "Merge qcom-next PR #$pr after publish" \
+              --arg message "Published qcom-next from CI run ${{ inputs.run_id }}." \
+              '{commit_title: $title, commit_message: $message, merge_method: "merge"}')"
+
+            # Textual conflicts are already ruled out: the verify step above
+            # merges every PR head locally first, and the planner never puts two
+            # PRs promoting the same topic in one batch. The realistic failure
+            # here is 405 "Base branch was modified", a race with someone else
+            # merging to the base branch, which is worth exactly one retry.
+            for attempt in 1 2; do
+              http_code="$(curl -sS -L -o "$body_file" -w '%{http_code}' \
+                -X PUT \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${{ github.repository }}/pulls/${pr}/merge" \
+                -d "$payload" || echo "000")"
+
+              if [ "$http_code" = "200" ]; then
+                echo "Merged kernel-config PR #$pr"
+                jq . "$body_file" || true
+                merged+=("$pr")
+                break
+              fi
+
+              if [ "$attempt" = "1" ] && { [ "$http_code" = "405" ] || [ "$http_code" = "409" ] || [ "$http_code" = "000" ]; }; then
+                echo "PR #$pr merge returned HTTP ${http_code}; retrying once"
+                sleep 5
+                continue
+              fi
+
+              echo "::warning title=qcom-next publish::could not merge kernel-config PR #${pr} (HTTP ${http_code})"
+              cat "$body_file" >&2 || true
+              failed+=("$pr")
+              break
+            done
+          done
+
+          merged_json="$(printf '%s\n' ${merged[@]+"${merged[@]}"} | jq -R -s -c 'split("\n") | map(select(length > 0) | tonumber)')"
+          failed_json="$(printf '%s\n' ${failed[@]+"${failed[@]}"} | jq -R -s -c 'split("\n") | map(select(length > 0) | tonumber)')"
+          {
+            echo "merged_json=${merged_json}"
+            echo "failed_json=${failed_json}"
+          } >> "$GITHUB_OUTPUT"
+          echo "merged=${merged_json} failed=${failed_json}"
+
+          # All or nothing: publishing a candidate whose pins are not fully
+          # merged is the one state that cannot be recovered automatically.
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error title=qcom-next publish::${#failed[@]} kernel-config PR(s) did not merge, so qcom-next was not published. Already-merged PRs are kept and will be carried by the next candidate."
+            exit 1
+          fi
+
+      # The dispatched label makes the dispatcher skip a PR until it is removed
+      # by hand, so a PR left unmerged here would stall indefinitely.
+      - name: Requeue PRs that failed to merge
+        if: always() && steps.merge_prs.outputs.failed_json != '' && steps.merge_prs.outputs.failed_json != '[]'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          FAILED_JSON: ${{ steps.merge_prs.outputs.failed_json }}
+          MERGED_JSON: ${{ steps.merge_prs.outputs.merged_json }}
+          DISPATCHED_LABEL: qcom-next-dispatched
+        with:
+          github-token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          script: |
+            const failed = JSON.parse(process.env.FAILED_JSON || '[]');
+            const merged = JSON.parse(process.env.MERGED_JSON || '[]');
+            const label = process.env.DISPATCHED_LABEL;
+
+            for (const number of failed) {
+              const body = [
+                '<!-- qcom-next-publish-merge-failed -->',
+                '### Not merged after a successful qcom-next validation',
+                '',
+                'This PR passed validation but its merge failed, so `qcom-next`',
+                'was not published from this run.',
+                merged.length
+                  ? `Other PRs in the batch did merge: ${merged.map((n) => '#' + n).join(', ')}. Their pins are carried by the next candidate.`
+                  : 'No PR in the batch merged.',
+                '',
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                `The \`${label}\` label has been removed so the dispatcher can pick this PR up again.`,
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: number,
+                body,
+              });
+
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: number,
+                  name: label,
+                });
+              } catch (error) {
+                if (error.status !== 404) {
+                  core.warning(`could not remove ${label} from #${number}: ${error.message}`);
+                }
+              }
+            }
+
       - name: Publish recorded candidate SHA
         id: publish
         env:
@@ -111,47 +244,76 @@ jobs:
           git rev-parse --quiet --verify "${CANDIDATE_SHA}^{commit}" >/dev/null
 
           git remote add publish "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${PUBLISH_REPO}.git"
-          git push --force publish "${CANDIDATE_SHA}:refs/heads/qcom-next"
+
+          # Recorded before the push so the branch can be restored, and used as
+          # the lease so a qcom-next that moved since is reported instead of
+          # being clobbered. An empty value is a valid lease meaning "must not
+          # exist", which is the correct expectation for the first publish.
+          before_sha="$(git ls-remote publish refs/heads/qcom-next | awk '{print $1}')"
+          echo "before_sha=${before_sha}" >> "$GITHUB_OUTPUT"
+          echo "qcom-next before: ${before_sha:-<none>}"
+
+          git push --force-with-lease="refs/heads/qcom-next:${before_sha}" \
+            publish "${CANDIDATE_SHA}:refs/heads/qcom-next"
           echo "published_sha=${CANDIDATE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify qcom-next points at the candidate
+        id: verify_publish
+        if: steps.publish.outputs.published_sha != ''
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.SPAT }}
+          CANDIDATE_SHA: ${{ steps.metadata.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          cd "${{ runner.temp }}/qcom-next-publish"
+          actual="$(git ls-remote publish refs/heads/qcom-next | awk '{print $1}')"
+          echo "qcom-next now: ${actual:-<none>}"
+          if [ "$actual" != "$CANDIDATE_SHA" ]; then
+            echo "::error title=qcom-next publish::qcom-next is ${actual:-<none>}, expected ${CANDIDATE_SHA}"
+            exit 1
+          fi
+
+      # Defence in depth. The ordering above means a failure usually happens
+      # before anything is published, but if the branch ends up somewhere other
+      # than the candidate after our own push, put it back. The lease expects
+      # our candidate, so a third party's newer push is left alone.
+      - name: Roll back qcom-next
+        if: always() && steps.publish.outputs.published_sha != '' && steps.verify_publish.outcome == 'failure'
+        env:
+          BEFORE_SHA: ${{ steps.publish.outputs.before_sha }}
+          CANDIDATE_SHA: ${{ steps.metadata.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          cd "${{ runner.temp }}/qcom-next-publish"
+
+          if [ -z "${BEFORE_SHA:-}" ]; then
+            echo "::warning title=qcom-next publish::qcom-next did not exist before this run, so there is nothing to restore. Leaving it as is."
+            exit 0
+          fi
+
+          if git push --force-with-lease="refs/heads/qcom-next:${CANDIDATE_SHA}" \
+               publish "${BEFORE_SHA}:refs/heads/qcom-next"; then
+            echo "::warning title=qcom-next publish::rolled qcom-next back to ${BEFORE_SHA}. The merged kernel-config PRs are intentionally left merged; the next candidate will carry them."
+          else
+            echo "::error title=qcom-next publish::could not roll qcom-next back to ${BEFORE_SHA}; it has moved since this run pushed ${CANDIDATE_SHA}. Needs a human."
+            exit 1
+          fi
 
       - name: Summary
         if: always()
-        run: |
-          echo "### qcom-next publish" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Source CI run: ${{ inputs.run_id }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Published: ${PUBLISH_REPO}:qcom-next" >> "$GITHUB_STEP_SUMMARY"
-          echo "SHA: ${{ steps.publish.outputs.published_sha }}" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Merge recorded kernel-config PRs
-        if: steps.publish.outputs.published_sha != ''
         env:
-          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
-          PRS_JSON: ${{ steps.metadata.outputs.prs_json }}
+          MERGED_JSON: ${{ steps.merge_prs.outputs.merged_json }}
+          FAILED_JSON: ${{ steps.merge_prs.outputs.failed_json }}
         run: |
-          set -euo pipefail
-          cd kernel-config
-
-          mapfile -t prs < <(jq -r '.[].number' <<< "$PRS_JSON")
-          for pr in "${prs[@]}"; do
-            echo "Merging kernel-config PR #$pr"
-            payload="$(jq -n \
-              --arg title "Merge qcom-next PR #$pr after publish" \
-              --arg message "Published qcom-next from CI run ${{ inputs.run_id }}." \
-              '{commit_title: $title, commit_message: $message, merge_method: "merge"}')"
-            response="$(curl -sS -w '\n%{http_code}' -L \
-              -X PUT \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/${pr}/merge" \
-              -d "$payload")"
-            http_code="$(printf '%s' "$response" | tail -n1)"
-            body="$(printf '%s' "$response" | sed '$d')"
-            if [ "$http_code" != "200" ]; then
-              echo "Failed to merge PR #$pr (HTTP $http_code)" >&2
-              printf '%s\n' "$body" >&2
-              exit 1
-            fi
-            printf '%s\n' "$body" | jq .
-          done
+          {
+            echo "### qcom-next publish"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Source CI run | ${{ inputs.run_id }} |"
+            echo "| Target | \`${PUBLISH_REPO}:qcom-next\` |"
+            echo "| Previous SHA | \`${{ steps.publish.outputs.before_sha || 'n/a' }}\` |"
+            echo "| Published SHA | \`${{ steps.publish.outputs.published_sha || 'not published' }}\` |"
+            echo "| Merged PRs | \`${MERGED_JSON:-[]}\` |"
+            echo "| Unmerged PRs | \`${FAILED_JSON:-[]}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
