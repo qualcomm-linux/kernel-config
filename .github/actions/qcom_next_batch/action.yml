@@ -2,7 +2,8 @@
 name: qcom-next batch plan
 description: >
   Group open qcom-next.yaml promotion PRs into batches that are safe to validate
-  together, using the safety zones in qcom-next-batching.yaml.
+  together, using the safety zones in qcom-next-batching.yaml. PRs linked by a
+  `Depends-on:` trailer are always batched together, across zones.
 
 inputs:
   token:

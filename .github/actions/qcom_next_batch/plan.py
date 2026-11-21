@@ -6,6 +6,11 @@ branches each one promotes, filters out PRs that are not ready, and groups the
 remainder into batches that are safe to validate together according to
 qcom-next-batching.yaml.
 
+A PR body may name prerequisites with `Depends-on: #<pr>`. Those PRs are always
+placed in the same batch, whatever safety zone they belong to, and are followed
+transitively. If a dependency cannot be dispatched the whole group is held back
+rather than validated without it.
+
 Only one pipeline is allowed to run at a time: if any workflow listed under
 defaults.block_on_workflows still has a queued, waiting or running run, nothing
 is dispatched and the next scheduled run tries again.
@@ -150,6 +155,37 @@ def changed_topics(before: dict, after: dict) -> list[str]:
             touched.add(branch)
     touched.update(set(before) - set(after))
     return sorted(touched)
+
+
+# ----------------------------------------------------------------- Depends-on
+
+# `Depends-on:` lines in a PR body name the PRs that must be validated in the
+# same batch. The value is a comma or space separated list; each entry may be a
+# bare number, a #-prefixed number, or a full pull request URL.
+DEPENDS_ON_RE = re.compile(r"^[ \t]*depends-on[ \t]*:(.*)$", re.IGNORECASE | re.MULTILINE)
+PULL_URL_RE = re.compile(r"/pull/(\d+)")
+
+
+def _dependency_number(token: str):
+    token = token.strip().strip(".,;:)(<>[]")
+    if not token:
+        return None
+    url = PULL_URL_RE.search(token)
+    if url:
+        return int(url.group(1))
+    token = token.lstrip("#")
+    return int(token) if token.isdigit() else None
+
+
+def parse_depends_on(body: str) -> list[int]:
+    """Return the PR numbers named by `Depends-on:` lines, in order."""
+    found: list[int] = []
+    for value in DEPENDS_ON_RE.findall(body or ""):
+        for token in re.split(r"[,\s]+", value):
+            number = _dependency_number(token)
+            if number is not None and number not in found:
+                found.append(number)
+    return found
 
 
 # ------------------------------------------------------------- serialisation
@@ -347,9 +383,210 @@ def eligible(pr: dict, zones: Zones, client: Client) -> tuple[bool, str]:
     return True, "ready"
 
 
+def changed_files(client: Client, number: int) -> set[str]:
+    files = client.paginate(f"/repos/{client.repo}/pulls/{number}/files")
+    return {entry["filename"] for entry in files}
+
+
+def collect(
+    pr: dict,
+    zones: Zones,
+    client: Client,
+    tracked: str,
+    names: set[str] | None = None,
+):
+    """Return (candidate, reason); candidate is None when the PR is unusable.
+
+    `names` is the PR's changed-file set when the caller has already fetched it.
+    """
+    number = pr["number"]
+
+    if names is None:
+        names = changed_files(client, number)
+    if tracked not in names:
+        return None, f"does not change {tracked}"
+
+    ok, reason = eligible(pr, zones, client)
+    if not ok:
+        return None, reason
+
+    head = pr.get("head") or {}
+    head_repo = ((head.get("repo") or {}).get("full_name")) or client.repo
+    before = parse_topics(client.raw_file(client.repo, tracked, (pr["base"] or {})["sha"]))
+    after = parse_topics(client.raw_file(head_repo, tracked, head["sha"]))
+    topics = changed_topics(before, after)
+
+    if not topics:
+        return None, "no topic change"
+
+    extra = names - {tracked}
+    if extra:
+        return None, "changes files beyond " + tracked
+
+    return {
+        "number": number,
+        "topics": topics,
+        "title": pr["title"],
+        "deps": parse_depends_on(pr.get("body")),
+    }, "ready"
+
+
+# ---------------------------------------------------------------- dependencies
+
+
+def resolve_dependencies(
+    candidates: list[dict],
+    open_prs: dict[int, dict],
+    zones: Zones,
+    client: Client,
+    tracked: str,
+    base: str,
+):
+    """Pull every `Depends-on:` PR into the candidate set.
+
+    A dependency must be validated together with the PR that declares it, so it
+    is pulled in even when it sits in a different safety zone and even when
+    ONLY_PRS did not name it. Dependencies are followed transitively.
+
+    Returns (by_number, edges, blocked). `blocked` maps a PR number to the
+    reason its dependency could not be batched; such a PR and everything linked
+    to it is held back rather than validated without its dependency.
+    """
+    by_number = {item["number"]: item for item in candidates}
+    edges: dict[int, set[int]] = {number: set() for number in by_number}
+    blocked: dict[int, str] = {}
+
+    def link(left: int, right: int) -> None:
+        edges.setdefault(left, set()).add(right)
+        edges.setdefault(right, set()).add(left)
+
+    queue = list(by_number)
+    while queue:
+        number = queue.pop(0)
+        item = by_number.get(number)
+        if item is None:
+            continue
+
+        for dep in item["deps"]:
+            if dep == number or dep in by_number:
+                if dep != number:
+                    link(number, dep)
+                continue
+
+            pr = open_prs.get(dep)
+            if pr is None:
+                try:
+                    pr = client.json(f"/repos/{client.repo}/pulls/{dep}")
+                except RuntimeError as error:
+                    blocked[number] = f"Depends-on #{dep} could not be read ({error})"
+                    continue
+
+            # A merged dependency is already in the base, so there is nothing to
+            # batch and the dependent PR is free to go out on its own.
+            if pr.get("merged_at"):
+                log(f"  Depends-on #{dep}: already merged")
+                continue
+
+            if pr.get("state") != "open":
+                blocked[number] = f"Depends-on #{dep} is closed and unmerged"
+                continue
+
+            dep_base = ((pr.get("base") or {}).get("ref")) or ""
+            if dep_base != base:
+                blocked[number] = (
+                    f"Depends-on #{dep} targets {dep_base or 'an unknown branch'}, "
+                    f"not {base}"
+                )
+                continue
+
+            dep_item, reason = collect(pr, zones, client, tracked)
+            if dep_item is None:
+                blocked[number] = f"Depends-on #{dep} is not dispatchable ({reason})"
+                continue
+
+            log(f"  Depends-on #{dep}: pulled into the same batch")
+            by_number[dep] = dep_item
+            link(number, dep)
+            queue.append(dep)
+
+    return by_number, edges, blocked
+
+
+def dependency_groups(by_number: dict[int, dict], edges: dict[int, set[int]]):
+    """Return the connected components of the Depends-on graph, oldest first."""
+    seen: set[int] = set()
+    groups: list[list[int]] = []
+
+    for number in sorted(by_number):
+        if number in seen:
+            continue
+        seen.add(number)
+        stack = [number]
+        component = []
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            for neighbour in sorted(edges.get(current, ())):
+                if neighbour in by_number and neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        groups.append(sorted(component))
+
+    return groups
+
+
+def build_items(
+    by_number: dict[int, dict],
+    edges: dict[int, set[int]],
+    blocked: dict[int, str],
+):
+    """Turn dependency groups into the atomic units the planner batches.
+
+    Returns (items, held); `held` lists the PRs withheld because something in
+    their dependency group could not be batched.
+    """
+    items = []
+    held: list[dict] = []
+
+    for group in dependency_groups(by_number, edges):
+        unusable = [(number, blocked[number]) for number in group if number in blocked]
+        if unusable:
+            detail = "; ".join(f"#{number}: {reason}" for number, reason in unusable)
+            for number in group:
+                if number in blocked:
+                    reason = blocked[number]
+                elif len(group) > 1:
+                    reason = f"held with its dependency group ({detail})"
+                else:
+                    reason = detail
+                log(f"  held: #{number}: {reason}")
+                held.append({"number": number, "reason": reason})
+            continue
+
+        topics: list[str] = []
+        for number in group:
+            topics.extend(by_number[number]["topics"])
+
+        duplicated = sorted({t for t in topics if topics.count(t) > 1})
+        if duplicated:
+            # Stacked promotions of one topic are expected to share a branch
+            # ancestry, so they are kept together and left to the merge.
+            log(
+                "  note: dependency group "
+                + ", ".join(f"#{n}" for n in group)
+                + " promotes "
+                + ", ".join(duplicated)
+                + " more than once"
+            )
+
+        items.append({"numbers": group, "topics": sorted(set(topics))})
+
+    return items, held
+
+
 def _fits(batch: dict, item: dict, limit: int, zones: Zones) -> bool:
-    """Whether this PR can join the batch."""
-    if len(batch["prs"]) >= limit:
+    """Whether this unit can join the batch."""
+    if len(batch["prs"]) + len(item["numbers"]) > limit:
         return False
 
     # Two PRs promoting the same topic edit the same sha/tag lines in
@@ -361,24 +598,34 @@ def _fits(batch: dict, item: dict, limit: int, zones: Zones) -> bool:
 
 
 def _add(batch: dict, item: dict) -> None:
-    batch["prs"].append(item["number"])
+    batch["prs"] = sorted(set(batch["prs"]) | set(item["numbers"]))
     batch["topics"] = sorted(set(batch["topics"]) | set(item["topics"]))
 
 
-def plan(candidates: list[dict], zones: Zones) -> list[dict]:
+def _reason(item: dict, detail: str) -> str:
+    if len(item["numbers"]) == 1:
+        return detail
+    linked = ", ".join(f"#{number}" for number in item["numbers"])
+    return f"Depends-on group {linked}; {detail}"
+
+
+def plan(items: list[dict], zones: Zones) -> list[dict]:
     grouped: dict[str, list[dict]] = {}
     wildcards: list[tuple[dict, dict]] = []
     batches: list[dict] = []
 
-    for item in candidates:
+    for item in items:
         zone, reason = zones.assign(item["topics"])
         if zone is None:
+            # A Depends-on group stays in one batch even when its topics span
+            # zones or would otherwise be solo: the PRs have to be validated
+            # together or not at all.
             batches.append(
                 {
-                    "zone": "solo",
-                    "prs": [item["number"]],
+                    "zone": "depends" if len(item["numbers"]) > 1 else "solo",
+                    "prs": sorted(item["numbers"]),
                     "topics": item["topics"],
-                    "reason": reason,
+                    "reason": _reason(item, reason),
                 }
             )
         elif zone["wildcard"]:
@@ -389,12 +636,12 @@ def plan(candidates: list[dict], zones: Zones) -> list[dict]:
 
     by_name = {zone["name"]: zone for zone in zones.zones}
 
-    for name, items in grouped.items():
+    for name, units in grouped.items():
         limit = by_name[name]["max_batch_size"]
-        items.sort(key=lambda entry: entry["number"])
+        units.sort(key=lambda entry: min(entry["numbers"]))
         open_batches: list[dict] = []
 
-        for item in items:
+        for item in units:
             placed = False
             for batch in open_batches:
                 if _fits(batch, item, limit, zones):
@@ -402,12 +649,13 @@ def plan(candidates: list[dict], zones: Zones) -> list[dict]:
                     placed = True
                     break
             if not placed:
+                # A group larger than max_batch_size is still kept whole.
                 open_batches.append(
                     {
                         "zone": name,
-                        "prs": [item["number"]],
+                        "prs": sorted(item["numbers"]),
                         "topics": sorted(set(item["topics"])),
-                        "reason": f"zone '{name}'",
+                        "reason": _reason(item, f"zone '{name}'"),
                     }
                 )
 
@@ -416,7 +664,7 @@ def plan(candidates: list[dict], zones: Zones) -> list[dict]:
     # Wildcard PRs join an existing batch in any zone, oldest batch first so a
     # wildcard rides along with work that is already going out. Solo batches
     # never accept a passenger.
-    wildcards.sort(key=lambda entry: entry[0]["number"])
+    wildcards.sort(key=lambda entry: min(entry[0]["numbers"]))
     leftover: list[tuple[dict, dict]] = []
     for item, wildcard_zone in wildcards:
         host = None
@@ -447,9 +695,9 @@ def plan(candidates: list[dict], zones: Zones) -> list[dict]:
             spares.append(
                 {
                     "zone": wildcard_zone["name"],
-                    "prs": [item["number"]],
+                    "prs": sorted(item["numbers"]),
                     "topics": sorted(set(item["topics"])),
-                    "reason": f"zone '{wildcard_zone['name']}'",
+                    "reason": _reason(item, f"zone '{wildcard_zone['name']}'"),
                 }
             )
     batches.extend(spares)
@@ -575,6 +823,7 @@ def main() -> None:
     )
     log(f"open PRs against {base}: {len(pulls)}")
 
+    open_prs = {pr["number"]: pr for pr in pulls}
     candidates = []
     rejected = []
 
@@ -583,41 +832,36 @@ def main() -> None:
         if only and number not in only:
             continue
 
-        files = client.paginate(f"/repos/{repo}/pulls/{number}/files")
-        names = {entry["filename"] for entry in files}
+        names = changed_files(client, number)
         if tracked not in names:
             continue
 
-        extra = names - {tracked}
         log(f"PR #{number}: {pr['title'][:70]}")
 
-        ok, reason = eligible(pr, zones, client)
-        if not ok:
+        item, reason = collect(pr, zones, client, tracked, names)
+        if item is None:
             log(f"  skipped: {reason}")
             rejected.append({"number": number, "reason": reason})
             continue
 
-        head = pr.get("head") or {}
-        head_repo = ((head.get("repo") or {}).get("full_name")) or repo
-        before = parse_topics(client.raw_file(repo, tracked, (pr["base"] or {})["sha"]))
-        after = parse_topics(client.raw_file(head_repo, tracked, head["sha"]))
-        topics = changed_topics(before, after)
+        log(f"  topics: {', '.join(item['topics'])}")
+        if item["deps"]:
+            log(f"  depends-on: {', '.join('#' + str(d) for d in item['deps'])}")
+        candidates.append(item)
 
-        if not topics:
-            log("  skipped: no topic sha/tag change")
-            rejected.append({"number": number, "reason": "no topic change"})
-            continue
+    # A Depends-on PR must ride in the same batch, whatever zone it belongs to.
+    by_number, edges, blocked = resolve_dependencies(
+        candidates, open_prs, zones, client, tracked, base
+    )
+    items, held = build_items(by_number, edges, blocked)
+    rejected.extend(held)
 
-        if extra:
-            reason = "changes files beyond " + tracked
-            log(f"  skipped: {reason} ({', '.join(sorted(extra))})")
-            rejected.append({"number": number, "reason": reason})
-            continue
+    withheld = {entry["number"] for entry in held}
+    candidates = [
+        by_number[number] for number in sorted(by_number) if number not in withheld
+    ]
 
-        log(f"  topics: {', '.join(topics)}")
-        candidates.append({"number": number, "topics": topics, "title": pr["title"]})
-
-    batches = plan(candidates, zones)
+    batches = plan(items, zones)
     selected = batches[: zones.max_dispatches]
 
     log("")

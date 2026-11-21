@@ -5,6 +5,10 @@
 # every topic they promote sits in the same safety zone and no pair of topics is
 # listed as conflicting.
 #
+# A PR body may declare prerequisites with `Depends-on: #<pr>`. Those PRs are
+# always validated in the same batch, even across safety zones, and the group is
+# held back entirely if any member is not dispatchable.
+#
 # Only one pipeline runs at a time. The planner refuses to dispatch while any
 # workflow in defaults.block_on_workflows still has a queued, waiting or running
 # run, so the next batch starts only after the previous one has finished.
