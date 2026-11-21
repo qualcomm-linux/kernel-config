@@ -39,13 +39,22 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Experiment wiring: both the baseline kernel and the topic branches come
-  # from the staging organisation, and the candidate is pushed there too, so a
-  # run cannot touch production. TOPICS_CONFIG must pin the same topics to the
-  # staging topic repository, which is what qcom-next-stg.yaml does.
+  # Experiment wiring: the baseline kernel and the topic branches come from the
+  # staging organisation, the candidate lives there, and publish writes
+  # qcom-next there. TOPICS_CONFIG must pin the same topics to the staging topic
+  # repository, which is what qcom-next-stg.yaml does.
   KERNEL_REPO: qualcomm-linux-stg/kernel
   TOPICS_REPO: qualcomm-linux-stg/kernel-topics
   TOPICS_CONFIG: qcom-next-stg.yaml
+
+  # The Yocto kernel recipe in meta-qcom hardcodes its SRC_URI, and CI only
+  # overrides SRCREV, so bitbake always fetches the candidate commit from this
+  # repository no matter where the candidate actually lives. The candidate is
+  # therefore mirrored here under the same ref name purely so the Yocto build
+  # can resolve it. Nothing else reads it: pre-merge, metadata and publish all
+  # use KERNEL_REPO. Set it empty to skip the mirror and the Yocto job.
+  YOCTO_MIRROR_REPO: qualcomm-linux/kernel
+
   AUTOMERGE_REPO: sgaud-quic/automerge
   S3_BUCKET: qli-prd-kernel-gh-artifacts
 
@@ -382,15 +391,31 @@ jobs:
 
           cd kernel-topics
           sha="$(git rev-parse refs/heads/qcom-next)"
-          git remote remove candidate 2>/dev/null || true
-          git remote add candidate \
-              "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${KERNEL_REPO}.git"
-          git push --force candidate "refs/heads/qcom-next:refs/heads/${ref}"
-          git remote remove candidate
+
+          push_candidate() {
+            local repo="$1" purpose="$2"
+            git remote remove candidate 2>/dev/null || true
+            git remote add candidate \
+                "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${repo}.git"
+            git push --force candidate "refs/heads/qcom-next:refs/heads/${ref}"
+            git remote remove candidate
+            echo "pushed ${repo} ${ref} @ ${sha:0:12} (${purpose})"
+          }
+
+          push_candidate "$KERNEL_REPO" "candidate: pre-merge, metadata and publish"
+
+          # Same ref name, so the Yocto fetch sees exactly what it sees today.
+          # Fatal if it fails: the Yocto job would otherwise fail later with a
+          # confusing "unable to find revision" instead of naming the cause.
+          if [ -n "${YOCTO_MIRROR_REPO:-}" ] \
+             && [ "$YOCTO_MIRROR_REPO" != "$KERNEL_REPO" ]; then
+            push_candidate "$YOCTO_MIRROR_REPO" "mirror: Yocto kernel recipe only"
+          else
+            echo "no separate Yocto mirror configured"
+          fi
 
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "pushed ${KERNEL_REPO} ${ref} @ ${sha:0:12}"
 
       - name: Store candidate metadata
         id: metadata
@@ -500,8 +525,11 @@ jobs:
     uses: ./.github/workflows/pre-merge-yocto.yml
     secrets: inherit
     with:
-      # Must match KERNEL_REPO above, as for premerge.
-      repo: qualcomm-linux-stg/kernel
+      # Deliberately the mirror, not KERNEL_REPO. The meta-qcom kernel recipe
+      # fetches from this repository regardless of what is passed here, and the
+      # candidate step mirrors the candidate into it for that reason. Keep this
+      # equal to YOCTO_MIRROR_REPO above.
+      repo: qualcomm-linux/kernel
       ref: ${{ needs.candidate.outputs.ref }}
       sha: ${{ needs.candidate.outputs.sha }}
 
