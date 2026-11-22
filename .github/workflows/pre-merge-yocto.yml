@@ -33,6 +33,10 @@ on:
         type: string
         default: ''
         required: false
+    outputs:
+      artifacts_location:
+        description: S3 key prefix the Yocto artifacts were uploaded to.
+        value: ${{ jobs.build_yocto.outputs.artifacts_location }}
   workflow_dispatch:
     inputs:
       pr:

@@ -25,6 +25,10 @@ on:
         type: boolean
         required: false
         default: true
+    outputs:
+      s3_location:
+        description: S3 key prefix the kbdev artifacts were uploaded to.
+        value: ${{ jobs.build.outputs.s3_location }}
   workflow_dispatch:
     inputs:
       pr:
