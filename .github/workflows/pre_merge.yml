@@ -192,6 +192,154 @@ jobs:
         if: always() && (needs.test.result != 'success' || steps.result_summary.outputs.failed == '1')
         run: exit 1
 
+  # A topic branch PR is never built on its own: CI reassembles the whole
+  # qcom-next tree with automerge and merges the PR on top, so a failure is not
+  # reproducible from a checkout of the branch. Record the inputs that pin that
+  # tree, above all the kernel-config commit qcom-next.yaml was read from.
+  #
+  # Only the stages that assemble and compile the tree are watched. A LAVA
+  # failure says nothing about how the tree was built, and test-results already
+  # posts its own summary.
+  failure-report:
+    name: Report failure on topic branch PR
+    runs-on: ubuntu-latest
+    # The comment goes to kernel-topics, which GITHUB_TOKEN cannot write to at
+    # all, so the PAT does the work and the job itself needs no scopes.
+    permissions: {}
+    needs: [loading, build, build_rt]
+    if: >-
+      always()
+      && inputs.repo == 'qualcomm-linux/kernel-topics'
+      && inputs.pr != ''
+      && inputs.pr != '0'
+      && (needs.loading.result == 'failure'
+      || needs.build.result == 'failure'
+      || needs.build_rt.result == 'failure')
+    steps:
+      - name: Comment run record and reproduction steps
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          TARGET_REPO: ${{ inputs.repo }}
+          PR_NUMBER: ${{ inputs.pr }}
+          TOPIC_BRANCH: ${{ inputs.ref }}
+          HEAD_SHA: ${{ inputs.sha }}
+          # qcom-next.yaml is read from this checkout, so this commit pins the
+          # baseline and every other topic SHA that went into the tree.
+          CONFIG_REPO: ${{ github.repository }}
+          CONFIG_SHA: ${{ github.sha }}
+          CONFIG_REF: ${{ github.ref_name }}
+          RESULT_LOADING: ${{ needs.loading.result }}
+          RESULT_BUILD: ${{ needs.build.result }}
+          RESULT_BUILD_RT: ${{ needs.build_rt.result }}
+        with:
+          github-token: ${{ secrets.PAT || github.token }}
+          script: |
+            const [owner, repo] = (process.env.TARGET_REPO || '').split('/');
+            if (!owner || !repo) {
+              core.setFailed(`Invalid target repository: ${process.env.TARGET_REPO}`);
+              return;
+            }
+
+            const pr = process.env.PR_NUMBER;
+            const topic = process.env.TOPIC_BRANCH;
+            const sha = process.env.HEAD_SHA;
+            const configRepo = process.env.CONFIG_REPO;
+            const configSha = process.env.CONFIG_SHA;
+            const configRef = process.env.CONFIG_REF;
+
+            const stages = [
+              ['loading', process.env.RESULT_LOADING],
+              ['build', process.env.RESULT_BUILD],
+              ['build_rt', process.env.RESULT_BUILD_RT],
+            ];
+            const failed = stages.filter(([, result]) => result === 'failure').map(([name]) => name);
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}`
+              + `/actions/runs/${context.runId}`;
+            const attempt = process.env.GITHUB_RUN_ATTEMPT || '1';
+            const configUrl = `${context.serverUrl}/${configRepo}/tree/${configSha}`;
+
+            const body = [
+              '<!-- topic-ci-failure -->',
+              '### Topic branch CI failed — tree reproduction',
+              '',
+              'This branch is not built on its own. CI rebuilds the whole `qcom-next`',
+              'tree from `qcom-next.yaml` with this topic pinned to the PR head, so the',
+              'tree is defined by the inputs below rather than by this branch alone.',
+              '',
+              '| Input | Value |',
+              '| --- | --- |',
+              `| Run | [${context.runId} (attempt ${attempt})](${runUrl}) |`,
+              `| Failed stage(s) | ${failed.length ? failed.map((n) => '`' + n + '`').join(', ') : 'see the run'} |`,
+              `| kernel-config | [\`${configSha}\`](${configUrl}) (\`${configRef}\`) |`,
+              `| Topic pinned | \`${topic}\` -> \`${sha}\` |`,
+              `| PR | \`${owner}/${repo}\`#${pr} |`,
+              '| automerge | `sgaud-quic/automerge` @ `sha_config_yaml` |',
+              '| rerere cache | `sgaud-quic/cache` |',
+              '',
+              `\`qcom-next.yaml\` at kernel-config \`${configSha.slice(0, 12)}\` pins the baseline`,
+              'and every other topic to an explicit SHA, so checking that commit out and',
+              'overriding only this topic reproduces the same tree.',
+              '',
+              '<details><summary>Rebuild the exact tree</summary>',
+              '',
+              '```sh',
+              'mkdir qcom-topic-repro && cd qcom-topic-repro',
+              '',
+              '# 1. Topic config, at the exact commit this run used',
+              `git clone https://github.com/${configRepo}.git`,
+              `git -C ${configRepo.split('/')[1]} checkout ${configSha}`,
+              '',
+              '# 2. Scratch tree; ci-merge resets it to the baseline named in the config',
+              'git clone https://github.com/qualcomm-linux/kernel.git',
+              '',
+              '# 3. automerge tooling, same branch CI uses',
+              'git clone --branch sha_config_yaml https://github.com/sgaud-quic/automerge.git',
+              '',
+              '# 4. Override only this topic with the PR head',
+              `cp ${configRepo.split('/')[1]}/qcom-next.yaml qcom-next-pr.yaml`,
+              `#    In qcom-next-pr.yaml, under the entry for '${topic}', set:`,
+              `#      sha: ${sha}`,
+              '#      tag: null',
+              "#    Repeat for every branch named by a 'Depends-on:' line in the PR body.",
+              '',
+              '# 5. Reassemble the tree',
+              'cd kernel',
+              'git config user.email you@example.com',
+              'git config user.name "Your Name"',
+              '../automerge/ci-merge --yaml-config ../qcom-next-pr.yaml \\',
+              '  -t head -i qcom-next \\',
+              '  -c https://github.com/sgaud-quic/cache \\',
+              '  -n -p | tee ../merge.log',
+              '',
+              '# 6. Merge this PR on top, as CI does',
+              `git fetch https://github.com/${owner}/${repo}.git pull/${pr}/head:pr-${pr}`,
+              `git merge pr-${pr}`,
+              '',
+              '# 7. Confirm the tree matches the run',
+              "grep '^Merge successful' ../merge.log",
+              'git log --oneline -1',
+              '```',
+              '',
+              'The run log for the failed stage contains the same `Merge successful` lines;',
+              'comparing them against local `merge.log` confirms an identical tree. The',
+              'workspace is assembled by `.github/actions/sync` in',
+              `\`${configRepo}\` at that commit.`,
+              '',
+              'Note: automerge and the rerere cache are tracked by branch, not pinned, so a',
+              'later change to either can alter conflict resolution.',
+              '',
+              '</details>',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: Number(pr),
+              body,
+            });
+
   final-status:
     runs-on: ubuntu-latest
     needs: [init-status, loading, build, test, test-results]
