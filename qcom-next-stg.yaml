@@ -147,8 +147,8 @@ topics:
   - name: tech/all/dt/qcs8300
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/qcs8300
-    sha: 04e89fef07e984710ac7adf256f306b3bdfb117a
-    tag: tech/all/dt/qcs8300-7.4-rc1-20261121
+    sha: 7d54eef1a832cff8c34903fbb7bc9245fd2fa7f5
+    tag: tech/all/dt/qcs8300-7.4-rc1-20261122
   - name: tech/all/dt/qcs615
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/qcs615
