@@ -259,17 +259,46 @@ jobs:
       - name: Update summary
         if: success() || failure()
         shell: bash
+        env:
+          UPLOAD_OUTCOME: ${{ steps.upload-artifacts.outcome }}
+          S3_BUCKET: qli-prd-kernel-gh-artifacts
+          S3_LOCATION: ${{ steps.upload-artifacts.outputs.s3_location }}
+          # Browsable mirror of the artifact bucket.
+          ARTIFACT_BASE_URL: https://qli-prod-artifacts.qualcomm.com
         run: |
-          if [ "${{ steps.upload-artifacts.outcome }}" == "success" ]; then
+          set -euo pipefail
+
+          if [ "$UPLOAD_OUTCOME" = "success" ]; then
             echo "Build was successful"
-            summary=":heavy_check_mark: Build Success"
+            status=":heavy_check_mark: Build Success"
           else
             echo "Build failed"
-            summary=":x: Build Failed"
+            status=":x: Build Failed"
           fi
-          SUMMARY='
-          <details><summary><i>Build Summary</i></summary>
-          '${summary}'
-          </details>
-          '
-          echo -e "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+          {
+            echo "### Kernel build artifacts"
+            echo ""
+            echo "$status"
+            echo ""
+            if [ -n "${S3_LOCATION}" ]; then
+              url="${ARTIFACT_BASE_URL}/${S3_BUCKET}/${S3_LOCATION}/"
+              echo "| Field | Value |"
+              echo "| --- | --- |"
+              echo "| Artifacts | [${url}](${url}) |"
+              echo "| AWS S3 path | \`s3://${S3_BUCKET}/${S3_LOCATION}/\` |"
+              echo ""
+              echo "<details><summary>Download the artifacts</summary>"
+              echo ""
+              echo '```sh'
+              echo "wget -r -np -nH --cut-dirs=3 ${url}"
+              echo "aws s3 cp --recursive s3://${S3_BUCKET}/${S3_LOCATION}/ ."
+              echo '```'
+              echo ""
+              echo "Per-file pre-signed links are in the \`presigned_urls.json\` run artifact, valid for 3 days."
+              echo ""
+              echo "</details>"
+            else
+              echo "No artifacts were uploaded."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

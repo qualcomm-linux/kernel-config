@@ -44,6 +44,8 @@ env:
   TOPICS_REPO: qualcomm-linux/kernel-topics
   AUTOMERGE_REPO: sgaud-quic/automerge
   S3_BUCKET: qli-prd-kernel-gh-artifacts
+  # Browsable mirror of the artifact bucket.
+  ARTIFACT_BASE_URL: https://qli-prod-artifacts.qualcomm.com
 
 jobs:
   candidate:
@@ -501,6 +503,69 @@ jobs:
     steps:
       - name: Checkout kernel-config
         uses: actions/checkout@v4
+
+      # The candidate is validated by two pipelines that upload to different
+      # prefixes, so collect both here rather than leaving them in the nested
+      # run summaries.
+      - name: Summarise candidate artifacts
+        if: always()
+        env:
+          CANDIDATE_REF: ${{ needs.candidate.outputs.ref }}
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          KBDEV_LOCATION: ${{ needs.premerge.outputs.s3_location }}
+          YOCTO_LOCATION: ${{ needs.yocto.outputs.artifacts_location }}
+        run: |
+          set -euo pipefail
+
+          row() {
+            local label="$1" location="$2" url
+            if [ -n "$location" ]; then
+              url="${ARTIFACT_BASE_URL}/${S3_BUCKET}/${location}/"
+              printf '| %s | [%s](%s) | `s3://%s/%s/` |\n' \
+                "$label" "$url" "$url" "$S3_BUCKET" "$location"
+            else
+              printf '| %s | not uploaded | - |\n' "$label"
+            fi
+          }
+
+          # Both pipelines default to the same owner/repo/run-attempt prefix, so
+          # in one run they usually resolve to a single location.
+          locations=()
+          if [ -n "$KBDEV_LOCATION" ] && [ "$KBDEV_LOCATION" = "$YOCTO_LOCATION" ]; then
+            rows="$(row 'kbdev + Yocto' "$KBDEV_LOCATION")"
+            locations=("$KBDEV_LOCATION")
+          else
+            rows="$(row kbdev "$KBDEV_LOCATION"; row Yocto "$YOCTO_LOCATION")"
+            if [ -n "$KBDEV_LOCATION" ]; then
+              locations+=("$KBDEV_LOCATION")
+            fi
+            if [ -n "$YOCTO_LOCATION" ]; then
+              locations+=("$YOCTO_LOCATION")
+            fi
+          fi
+
+          {
+            echo "### qcom-next candidate artifacts"
+            echo ""
+            echo "Candidate: \`${CANDIDATE_REF}\` @ \`${CANDIDATE_SHA}\`"
+            echo ""
+            echo "| Pipeline | Artifacts | AWS S3 path |"
+            echo "| --- | --- | --- |"
+            echo "$rows"
+            if [ ${#locations[@]} -gt 0 ]; then
+              echo ""
+              echo "<details><summary>Download the artifacts</summary>"
+              echo ""
+              echo '```sh'
+              for location in "${locations[@]}"; do
+                echo "wget -r -np -nH --cut-dirs=3 ${ARTIFACT_BASE_URL}/${S3_BUCKET}/${location}/"
+                echo "aws s3 cp --recursive s3://${S3_BUCKET}/${location}/ ."
+              done
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build expected LAVA target lists
         id: expected_targets
