@@ -152,8 +152,8 @@ topics:
   - name: tech/all/dt/qcs615
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/qcs615
-    sha: ad252a3e187c63a92abc59761ffdcc649799ee68
-    tag: tech/all/dt/qcs615-7.4-rc1-20261121
+    sha: ef9e3e9d2f0132a395347649bfab481caa819329
+    tag: tech/all/dt/qcs615-7.4-rc1-20261122
   - name: tech/all/dt/eliza
     repo: "https://github.com/qualcomm-linux-stg/kernel-topics.git"
     branch: tech/all/dt/eliza
