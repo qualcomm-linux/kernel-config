@@ -32,11 +32,11 @@ permissions:
   issues: write
   pull-requests: write
 
-concurrency:
+#concurrency:
   # qcom-next candidate generation updates shared refs/cache state, so serialize
   # all automatic and manual invocations instead of canceling in-flight runs.
-  group: qcom-next-topic-update
-  cancel-in-progress: false
+#  group: qcom-next-topic-update
+#  cancel-in-progress: false
 
 env:
   # Experiment wiring: the baseline kernel and the topic branches come from the
