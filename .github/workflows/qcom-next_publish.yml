@@ -273,6 +273,35 @@ jobs:
             exit 1
           fi
 
+      # The candidate branch was a temporary ref used only to shuttle the
+      # candidate commit into the publish step. Now that qcom-next carries
+      # that commit, the ref is dead weight. Delete it so candidate branches
+      # do not accumulate indefinitely. Failure here is cosmetic: the
+      # candidate commit is already reachable from qcom-next, and the next
+      # run would overwrite a per-PR ref anyway.
+      - name: Delete candidate branch from remote
+        if: steps.verify_publish.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_PUSH_TOKEN: ${{ secrets.SPAT }}
+          CANDIDATE_REPO: ${{ steps.metadata.outputs.candidate_repo }}
+          CANDIDATE_REF: ${{ steps.metadata.outputs.candidate_ref }}
+        run: |
+          set -euo pipefail
+          cd "${{ runner.temp }}/qcom-next-publish"
+
+          # The candidate remote was added with read-only HTTPS during the
+          # publish step. Re-add it with the push token so the delete works.
+          git remote remove candidate 2>/dev/null || true
+          git remote add candidate \
+            "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${CANDIDATE_REPO}.git"
+
+          if git push candidate --delete "refs/heads/${CANDIDATE_REF}"; then
+            echo "deleted ${CANDIDATE_REPO}:${CANDIDATE_REF}"
+          else
+            echo "::warning title=qcom-next publish::could not delete candidate branch ${CANDIDATE_REF} from ${CANDIDATE_REPO}; remove it manually"
+          fi
+
       # Defence in depth. The ordering above means a failure usually happens
       # before anything is published, but if the branch ends up somewhere other
       # than the candidate after our own push, put it back. The lease expects
