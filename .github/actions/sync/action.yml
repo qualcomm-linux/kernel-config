@@ -105,21 +105,6 @@ runs:
         jq --raw-output .body > pr-desc
         cat pr-desc
 
-    - name: Retrieve Dependencies
-      if: inputs.repo == 'qualcomm-linux/kernel-topics'
-      shell: bash
-      run: |
-        set +o pipefail
-        cat pr-desc | \
-        grep --perl-regexp '^Depends-on:' | \
-        cut -d ':' -f2 | \
-        tr ',' '\n' | \
-        sed 's/^ *//' | \
-        sed 's/ *$//' | \
-        sed 's/^#//' | \
-        sed '/^$/d' > pr-deps
-        cat pr-deps
-
     # A cross-topic dependency is only satisfied once it has travelled the whole
     # promotion path: merged into its own topic branch, tagged, and that tag
     # recorded in qcom-next.yaml. Until then this PR would be tested against a
@@ -148,12 +133,53 @@ runs:
         CONFIG="$config_root/qcom-next.yaml" python3 <<'PY'
         import json
         import os
+        import re
         import sys
         import urllib.error
         import urllib.request
 
         REPO = "qualcomm-linux/kernel-topics"
         API = "https://api.github.com"
+
+        # Accepted forms, deliberately tolerant: leading whitespace, any case,
+        # and whitespace before the colon, with values separated by commas or
+        # spaces and given as a bare number, a #-prefixed number, or a pull
+        # request URL.
+        #
+        #   Depends-on: #2352
+        #   Depends-on : 2352, #2353
+        #   depends-on: https://github.com/<org>/<repo>/pull/2352
+        #
+        # The previous grep required an exact "^Depends-on:" and so ignored
+        # "Depends-on : #2352". A trailer that is read by a human as a
+        # dependency but not matched here silently disables the gate below,
+        # which is the one failure mode this step must not have. Keep this in
+        # step with the Depends-on parsing used by the qcom-next batch planner
+        # where that exists, so both paths honour the same trailer.
+        DEPENDS_ON_RE = re.compile(
+            r"^[ \t]*depends-on[ \t]*:(.*)$", re.IGNORECASE | re.MULTILINE
+        )
+        PULL_URL_RE = re.compile(r"/pull/(\d+)")
+
+
+        def parse_depends_on(body):
+            """Return the dependency tokens named by Depends-on: lines.
+
+            Tokens are returned as written, minus a leading '#', rather than
+            being coerced to numbers: an entry that is not a PR number has to
+            be reported as invalid instead of disappearing.
+            """
+            found = []
+            for value in DEPENDS_ON_RE.findall(body or ""):
+                for token in re.split(r"[,\s]+", value):
+                    token = token.strip().strip(".,;:)(<>[]")
+                    if not token:
+                        continue
+                    url = PULL_URL_RE.search(token)
+                    entry = url.group(1) if url else token.lstrip("#")
+                    if entry and entry not in found:
+                        found.append(entry)
+            return found
 
         token = os.environ.get("GH_TOKEN", "")
         base_pr = str(os.environ["BASE_PR"]).strip()
@@ -215,8 +241,17 @@ runs:
             return entries
 
 
-        with open("pr-deps", encoding="utf-8") as handle:
-            deps = [line.strip() for line in handle if line.strip()]
+        with open("pr-desc", encoding="utf-8") as handle:
+            description = handle.read()
+
+        deps = parse_depends_on(description)
+
+        # Recorded for debugging; the parse above is the source of truth.
+        with open("pr-deps", "w", encoding="utf-8") as handle:
+            for dep in deps:
+                handle.write(f"{dep}\n")
+
+        print(f"declared dependencies: {', '.join(deps) if deps else '<none>'}")
 
         pin_for = pins(config)
         satisfied = []
