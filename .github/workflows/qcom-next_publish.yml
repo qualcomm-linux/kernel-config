@@ -25,7 +25,7 @@ concurrency:
 
 env:
   S3_BUCKET: qli-prd-kernel-gh-artifacts
-  PUBLISH_REPO: qualcomm-linux-stg/kernel
+  PUBLISH_REPO: qualcomm-linux/kernel
 
 jobs:
   publish:
