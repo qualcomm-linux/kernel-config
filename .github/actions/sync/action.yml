@@ -111,9 +111,21 @@ runs:
     # tree that does not contain its prerequisite, so the run is stopped.
     #
     # "the topic has a tag" is not sufficient on its own: every topic in
-    # qcom-next.yaml already carries a tag from an earlier promotion. The pin
-    # must be shown to actually contain the dependency's merge commit, which is
-    # what the compare call below establishes.
+    # qcom-next.yaml already carries a tag from an earlier promotion, so that
+    # test would pass against a tag predating the dependency. The pin has to be
+    # shown to actually contain the dependency's changes.
+    #
+    # Containment is decided by patch id, not by commit ancestry. Topic branches
+    # here are rebased onto each new baseline, which orphans the dependency's
+    # merge commit and re-applies its patches under fresh SHAs, so asking
+    # whether the merge commit is an ancestor of the pin reports "diverged" for
+    # a dependency that is plainly present. git cherry compares patch ids and
+    # sees through the rebase. It is bounded by the dependency PR's own base
+    # commit so only that PR's commits are considered, not everything that
+    # happened to be on the branch when it was opened.
+    #
+    # A patch rewritten while resolving a rebase conflict gets a new patch id
+    # and is reported as missing. That is the remaining false negative here.
     #
     # A dependency on another PR against the same topic branch is a stacked PR,
     # already present in the branch tip this run builds from, so it needs no
@@ -130,10 +142,15 @@ runs:
         set -euo pipefail
         config_root="$(cd "${{ github.action_path }}/../../.." && pwd)"
 
-        CONFIG="$config_root/qcom-next.yaml" python3 <<'PY'
+        # The kernel clone made by "Clone repositories" above. Dependency refs
+        # are fetched into it, which keeps this to incremental fetches rather
+        # than a fresh clone of a kernel tree per dependency.
+        CONFIG="$config_root/qcom-next.yaml" \
+        KERNEL_DIR="$GITHUB_WORKSPACE/kernel" python3 <<'PY'
         import json
         import os
         import re
+        import subprocess
         import sys
         import urllib.error
         import urllib.request
@@ -185,6 +202,8 @@ runs:
         base_pr = str(os.environ["BASE_PR"]).strip()
         primary = os.environ["PRIMARY_TOPIC"].strip()
         config = os.environ["CONFIG"]
+        kernel_dir = os.environ["KERNEL_DIR"]
+        DEFAULT_TOPICS_URL = f"https://github.com/{REPO}.git"
 
 
         def api(path):
@@ -197,8 +216,91 @@ runs:
                 return json.loads(response.read())
 
 
+        def git(*args):
+            return subprocess.run(
+                ["git", "-C", kernel_dir, *args],
+                capture_output=True,
+                text=True,
+            )
+
+
+        def have_commit(sha):
+            return git("cat-file", "-e", f"{sha}^{{commit}}").returncode == 0
+
+
+        def missing_patches(slot, repo_url, topic, tag, pin_sha, dep, dep_base):
+            """Return (missing_subjects, error).
+
+            missing_subjects lists the dependency PR's commits whose patch is
+            not present in the promoted pin. An empty list means the pin
+            contains the dependency.
+            """
+            namespace = f"refs/dep/{slot}"
+            refspecs = [
+                f"+refs/pull/{dep}/head:{namespace}/head",
+                f"+refs/tags/{tag}:{namespace}/tag",
+            ]
+            fetched = git("fetch", "--no-tags", "--quiet", repo_url, *refspecs)
+            if fetched.returncode:
+                # The tag may be missing while the branch still has the pin.
+                fetched = git(
+                    "fetch",
+                    "--no-tags",
+                    "--quiet",
+                    repo_url,
+                    f"+refs/pull/{dep}/head:{namespace}/head",
+                    f"+refs/heads/{topic}:{namespace}/branch",
+                )
+                if fetched.returncode:
+                    return None, (
+                        f"could not fetch `{tag}` or `{topic}` and "
+                        f"pull/{dep}/head from {repo_url} "
+                        f"({fetched.stderr.strip().splitlines()[-1:] or ['unknown']})"
+                    )
+
+            if not have_commit(pin_sha):
+                # Pin unreachable from the tag; the branch may still carry it.
+                git(
+                    "fetch",
+                    "--no-tags",
+                    "--quiet",
+                    repo_url,
+                    f"+refs/heads/{topic}:{namespace}/branch",
+                )
+            if not have_commit(pin_sha):
+                return None, (
+                    f"the pinned commit `{pin_sha[:12]}` for `{topic}` is not "
+                    f"reachable from `{tag}` or `{topic}` in {repo_url}"
+                )
+
+            if not have_commit(dep_base):
+                return None, (
+                    f"the base commit of #{dep} (`{dep_base[:12]}`) was not "
+                    "fetched, so its own commits cannot be isolated"
+                )
+
+            # Bounded by dep_base so only this PR's commits are considered.
+            cherry = git("cherry", pin_sha, f"{namespace}/head", dep_base)
+            if cherry.returncode:
+                return None, (
+                    "git cherry failed: "
+                    f"{cherry.stderr.strip().splitlines()[-1:] or ['unknown']}"
+                )
+
+            missing = []
+            for line in cherry.stdout.splitlines():
+                parts = line.split()
+                if len(parts) < 2 or parts[0] != "+":
+                    continue
+                subject = git(
+                    "log", "-1", "--format=%s", parts[1]
+                ).stdout.strip()
+                missing.append(f"{parts[1][:12]} {subject}")
+            return missing, None
+
+
         def pins(path):
-            """Return {topic: {sha, tag}} from qcom-next.yaml.
+            """Return {topic: {sha, tag, repo}} from qcom-next.yaml.
 
             Parsed line by line, like the generator below, so this action does
             not depend on PyYAML being present on the runner.
@@ -212,13 +314,17 @@ runs:
                 found = {}
                 for line in block:
                     stripped = line.strip()
-                    for field in ("name", "branch", "sha", "tag"):
+                    for field in ("name", "branch", "sha", "tag", "repo"):
                         if stripped.startswith(f"{field}:"):
                             found[field] = (
                                 stripped.split(":", 1)[1].strip().strip('"')
                             )
                             break
-                pin = {"sha": found.get("sha", ""), "tag": found.get("tag", "")}
+                pin = {
+                    "sha": found.get("sha", ""),
+                    "tag": found.get("tag", ""),
+                    "repo": found.get("repo", ""),
+                }
                 for key in ("name", "branch"):
                     if found.get(key):
                         entries[found[key]] = pin
@@ -257,7 +363,7 @@ runs:
         satisfied = []
         blocked = []
 
-        for dep in deps:
+        for index, dep in enumerate(deps):
             if not dep.isdigit():
                 blocked.append(
                     (
@@ -290,7 +396,6 @@ runs:
                 continue
 
             topic = ((pull.get("base") or {}).get("ref") or "").strip()
-            merge_sha = (pull.get("merge_commit_sha") or "").strip()
 
             if topic == primary:
                 satisfied.append(
@@ -316,30 +421,36 @@ runs:
                 )
                 continue
 
-            if not merge_sha:
+            dep_base = ((pull.get("base") or {}).get("sha") or "").strip()
+            if not dep_base:
                 blocked.append(
-                    (f"#{dep}", "has no merge commit recorded on the GitHub API.")
+                    (f"#{dep}", "has no base commit recorded on the GitHub API.")
                 )
                 continue
 
-            try:
-                compare = api(
-                    f"/repos/{REPO}/compare/{merge_sha}...{entry['sha']}"
-                )
-            except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
-                blocked.append(
-                    (f"#{dep}", f"could not be compared against `{tag}` ({error}).")
-                )
+            missing, error = missing_patches(
+                slot=index,
+                repo_url=entry["repo"] or DEFAULT_TOPICS_URL,
+                topic=topic,
+                tag=tag,
+                pin_sha=entry["sha"],
+                dep=dep,
+                dep_base=dep_base,
+            )
+            if error is not None:
+                blocked.append((f"#{dep}", error))
                 continue
 
-            status = compare.get("status")
-            if status not in ("identical", "ahead"):
+            if missing:
+                detail = "; ".join(f"`{item}`" for item in missing[:3])
+                if len(missing) > 3:
+                    detail += f" and {len(missing) - 3} more"
                 blocked.append(
                     (
                         f"#{dep}",
                         f"is merged but the promoted pin for `{topic}` (`{tag}`) "
-                        f"does not contain merge commit `{merge_sha[:12]}`. "
-                        f"A newer tag has to be promoted first.",
+                        f"does not contain {len(missing)} of its commit(s): "
+                        f"{detail}. A newer tag has to be promoted first.",
                     )
                 )
                 continue
