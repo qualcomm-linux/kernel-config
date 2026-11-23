@@ -5,7 +5,7 @@
   "tech/all/dt/glymur": { "lava": false, "axiom": false },
   "tech/all/dt/hamoa": { "lava": false, "axiom": false },
   "tech/all/dt/kaanapali": { "lava": false, "axiom": false },
-  "tech/all/dt/pakala": { "lava": false, "axiom": false },
+  "tech/all/dt/pakala": { "lava": true, "axiom": false },
   "tech/all/dt/qcs615": { "lava": false, "axiom": false },
   "tech/all/dt/qcs6490": { "lava": false, "axiom": false },
   "tech/all/dt/qcs8300": { "lava": false, "axiom": false },
