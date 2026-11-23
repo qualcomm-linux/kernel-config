@@ -105,6 +105,20 @@ defaults:
   unknown_topic_policy: solo
 
 zones:
+  # --------------------------------------------------------------- baseline
+  # A baseline update (new upstream rc tag) redefines the merge-base for every
+  # topic branch, so it must be validated alone and before any topic promotion.
+  # The planner gives baseline batches dispatch priority over all other zones.
+  - name: baseline
+    description: >
+      Upstream baseline tag/sha change in the baseline: section of
+      qcom-next.yaml.  Every topic branch is rebased on the baseline, so a
+      stale baseline under-tests the entire tree.  Must run solo and before
+      any topic batch.
+    solo: true
+    topics:
+      - __baseline__
+
   # ---------------------------------------------------------------- batchable
   - name: dt-soc
     description: >

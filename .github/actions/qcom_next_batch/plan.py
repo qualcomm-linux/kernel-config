@@ -122,8 +122,18 @@ class Client:
 # ------------------------------------------------------------ topic extraction
 
 
+# Synthetic topic name injected when the baseline section changes.  It is
+# deliberately not a valid branch name so it cannot collide with a real topic.
+BASELINE_TOPIC = "__baseline__"
+
+
 def parse_topics(text: str) -> dict[str, dict[str, str]]:
-    """Return {branch: {sha, tag}} from a qcom-next.yaml document."""
+    """Return {branch: {sha, tag}} from a qcom-next.yaml document.
+
+    The baseline section is included under the synthetic key
+    ``__baseline__`` so that a PR changing only the baseline tag/sha is
+    detected as a topic change instead of being silently skipped.
+    """
     if not text:
         return {}
     try:
@@ -134,6 +144,15 @@ def parse_topics(text: str) -> dict[str, dict[str, str]]:
     if not isinstance(data, dict):
         return {}
     result = {}
+
+    baseline = data.get("baseline")
+    if isinstance(baseline, dict):
+        result[BASELINE_TOPIC] = {
+            "sha": str(baseline.get("sha", "")),
+            "tag": str(baseline.get("tag", "")),
+            "repo": str(baseline.get("repo", "")),
+        }
+
     for item in data.get("topics") or []:
         if not isinstance(item, dict):
             continue
@@ -702,8 +721,14 @@ def plan(items: list[dict], zones: Zones) -> list[dict]:
             )
     batches.extend(spares)
 
-    # Oldest PR first so nothing starves.
-    batches.sort(key=lambda batch: min(batch["prs"]))
+    # Baseline PRs always dispatch first: every topic branch is rebased on the
+    # baseline, so a stale baseline under-tests the entire tree.  Among
+    # non-baseline batches, oldest PR first so nothing starves.
+    def _sort_key(batch: dict) -> tuple[int, int]:
+        has_baseline = 1 if BASELINE_TOPIC not in batch["topics"] else 0
+        return (has_baseline, min(batch["prs"]))
+
+    batches.sort(key=_sort_key)
     return batches
 
 
