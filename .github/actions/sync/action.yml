@@ -120,47 +120,262 @@ runs:
         sed '/^$/d' > pr-deps
         cat pr-deps
 
-    - name: Validate Dependencies
+    # A cross-topic dependency is only satisfied once it has travelled the whole
+    # promotion path: merged into its own topic branch, tagged, and that tag
+    # recorded in qcom-next.yaml. Until then this PR would be tested against a
+    # tree that does not contain its prerequisite, so the run is stopped.
+    #
+    # "the topic has a tag" is not sufficient on its own: every topic in
+    # qcom-next.yaml already carries a tag from an earlier promotion. The pin
+    # must be shown to actually contain the dependency's merge commit, which is
+    # what the compare call below establishes.
+    #
+    # A dependency on another PR against the same topic branch is a stacked PR,
+    # already present in the branch tip this run builds from, so it needs no
+    # promotion. Cycles cannot deadlock: a dependency must be merged, and two
+    # unmerged PRs depending on each other are both simply reported as unmerged.
+    - name: Validate dependency promotions
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
       env:
         GH_TOKEN: ${{ inputs.GH_TOKEN }}
+        BASE_PR: ${{ inputs.pr_number }}
+        PRIMARY_TOPIC: ${{ inputs.base_branch }}
       shell: bash
       run: |
-        touch topic-branches
-        touch invalid-deps
-        base_pr=${{ inputs.pr_number }}
+        set -euo pipefail
+        config_root="$(cd "${{ github.action_path }}/../../.." && pwd)"
 
-        while read -r dep; do
-          [ -z "$dep" ] && continue
+        CONFIG="$config_root/qcom-next.yaml" python3 <<'PY'
+        import json
+        import os
+        import sys
+        import urllib.error
+        import urllib.request
 
-          if [[ "$dep" =~ ^[0-9]+$ ]]; then
-            resp=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/qualcomm-linux/kernel-topics/pulls/$dep")
-            if echo "$resp" | jq -e ".merged_at != null" > /dev/null; then
-              base_ref=$(echo "$resp" | jq -r .base.ref)
-              echo "$dep,$base_ref" >> topic-branches
-            else
-              echo "#$dep" >> invalid-deps
-            fi
-          elif git ls-remote --exit-code --heads https://github.com/qualcomm-linux/kernel-topics.git "$dep" > /dev/null 2>&1; then
-            echo "$dep,$dep" >> topic-branches
-          else
-            echo "#$dep" >> invalid-deps
-          fi
-        done < pr-deps
+        REPO = "qualcomm-linux/kernel-topics"
+        API = "https://api.github.com"
 
-        if [ -s "topic-branches" ]; then
-          sort -t, -k2,2 -u topic-branches -o topic-branches
-        fi
+        token = os.environ.get("GH_TOKEN", "")
+        base_pr = str(os.environ["BASE_PR"]).strip()
+        primary = os.environ["PRIMARY_TOPIC"].strip()
+        config = os.environ["CONFIG"]
 
-        if [ -s "invalid-deps" ]; then
-            msg="CI build failed due to invalid or unmerged dependencies: $(paste -sd ' ' < invalid-deps)"
-            json=$(jq -n --arg body "$msg" '{body: $body}')
-            curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/qualcomm-linux/kernel-topics/issues/"$base_pr"/comments \
-            -d "$json"
-            exit 1
-        fi
-        cat topic-branches
+
+        def api(path):
+            request = urllib.request.Request(f"{API}{path}")
+            request.add_header("Accept", "application/vnd.github+json")
+            request.add_header("X-GitHub-Api-Version", "2022-11-28")
+            if token:
+                request.add_header("Authorization", f"Bearer {token}")
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.loads(response.read())
+
+
+        def pins(path):
+            """Return {topic: {sha, tag}} from qcom-next.yaml.
+
+            Parsed line by line, like the generator below, so this action does
+            not depend on PyYAML being present on the runner.
+            """
+            entries = {}
+            block = []
+
+            def flush():
+                if not block:
+                    return
+                found = {}
+                for line in block:
+                    stripped = line.strip()
+                    for field in ("name", "branch", "sha", "tag"):
+                        if stripped.startswith(f"{field}:"):
+                            found[field] = (
+                                stripped.split(":", 1)[1].strip().strip('"')
+                            )
+                            break
+                pin = {"sha": found.get("sha", ""), "tag": found.get("tag", "")}
+                for key in ("name", "branch"):
+                    if found.get(key):
+                        entries[found[key]] = pin
+
+            in_topics = False
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith("topics:"):
+                        in_topics = True
+                        continue
+                    if not in_topics:
+                        continue
+                    if line.startswith("  - name:"):
+                        flush()
+                        block = [line]
+                        continue
+                    if block:
+                        block.append(line)
+            flush()
+            return entries
+
+
+        with open("pr-deps", encoding="utf-8") as handle:
+            deps = [line.strip() for line in handle if line.strip()]
+
+        pin_for = pins(config)
+        satisfied = []
+        blocked = []
+
+        for dep in deps:
+            if not dep.isdigit():
+                blocked.append(
+                    (
+                        dep,
+                        "not a PR number. Depends-on must name a kernel-topics "
+                        "PR, because only a merged PR can be traced to a "
+                        "promoted pin.",
+                    )
+                )
+                continue
+
+            if dep == base_pr:
+                blocked.append((f"#{dep}", "a PR cannot depend on itself."))
+                continue
+
+            try:
+                pull = api(f"/repos/{REPO}/pulls/{dep}")
+            except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+                blocked.append((f"#{dep}", f"could not be read ({error})."))
+                continue
+
+            if not pull.get("merged_at"):
+                blocked.append(
+                    (
+                        f"#{dep}",
+                        "is not merged into its topic branch yet. It must merge "
+                        "first, then be tagged and promoted.",
+                    )
+                )
+                continue
+
+            topic = ((pull.get("base") or {}).get("ref") or "").strip()
+            merge_sha = (pull.get("merge_commit_sha") or "").strip()
+
+            if topic == primary:
+                satisfied.append(
+                    (f"#{dep}", topic, "same topic branch, already in the tip")
+                )
+                continue
+
+            entry = pin_for.get(topic)
+            if entry is None:
+                blocked.append(
+                    (f"#{dep}", f"topic `{topic}` is not listed in qcom-next.yaml.")
+                )
+                continue
+
+            tag = entry["tag"]
+            if not tag or tag == "null":
+                blocked.append(
+                    (
+                        f"#{dep}",
+                        f"topic `{topic}` has no tag in qcom-next.yaml. It must "
+                        "be tagged and promoted before this PR can be tested.",
+                    )
+                )
+                continue
+
+            if not merge_sha:
+                blocked.append(
+                    (f"#{dep}", "has no merge commit recorded on the GitHub API.")
+                )
+                continue
+
+            try:
+                compare = api(
+                    f"/repos/{REPO}/compare/{merge_sha}...{entry['sha']}"
+                )
+            except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+                blocked.append(
+                    (f"#{dep}", f"could not be compared against `{tag}` ({error}).")
+                )
+                continue
+
+            status = compare.get("status")
+            if status not in ("identical", "ahead"):
+                blocked.append(
+                    (
+                        f"#{dep}",
+                        f"is merged but the promoted pin for `{topic}` (`{tag}`) "
+                        f"does not contain merge commit `{merge_sha[:12]}`. "
+                        f"A newer tag has to be promoted first.",
+                    )
+                )
+                continue
+
+            satisfied.append((f"#{dep}", topic, tag))
+
+        for ref, topic, detail in satisfied:
+            print(f"dependency {ref}: satisfied by {topic} ({detail})")
+
+        dep_topics = sorted(
+            {topic for _ref, topic, _detail in satisfied if topic != primary}
+        )
+        with open("dep-topics", "w", encoding="utf-8") as handle:
+            for topic in dep_topics:
+                handle.write(f"{topic}\n")
+
+        if not blocked:
+            if dep_topics:
+                print("dependency topics taken from qcom-next.yaml: " + ", ".join(dep_topics))
+            sys.exit(0)
+
+        for ref, reason in blocked:
+            print(f"dependency {ref}: BLOCKED: {reason}")
+
+        body = "\n".join(
+            [
+                "<!-- qcom-next-dep-gate -->",
+                "### CI not run: a dependency is not promoted yet",
+                "",
+                "This PR declares `Depends-on:` prerequisites that have not"
+                " completed the promotion path, so it was not built. Testing it"
+                " now would use a tree without its prerequisites.",
+                "",
+                "| Dependency | Reason |",
+                "| --- | --- |",
+            ]
+            + [f"| {ref} | {reason} |" for ref, reason in blocked]
+            + [
+                "",
+                "Required order for each dependency:",
+                "",
+                "1. The dependency PR merges into its own topic branch.",
+                "2. That topic branch is tagged.",
+                "3. The tag is promoted into `qcom-next.yaml`.",
+                "",
+                "Once that is done, a maintainer needs to re-run this workflow.",
+            ]
+        )
+
+        payload = json.dumps({"body": body}).encode("utf-8")
+        request = urllib.request.Request(
+            f"{API}/repos/{REPO}/issues/{base_pr}/comments", data=payload
+        )
+        request.add_header("Accept", "application/vnd.github+json")
+        request.add_header("X-GitHub-Api-Version", "2022-11-28")
+        request.add_header("Content-Type", "application/json")
+        if token:
+            request.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                response.read()
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+            print(f"warning: could not comment on #{base_pr}: {error}")
+
+        print(
+            "::error title=qcom-next dependency::"
+            f"{len(blocked)} dependency/dependencies are not promoted yet; "
+            "see the PR comment for the required order"
+        )
+        sys.exit(1)
+        PY
 
     - name: Create qcom-next YAML for topic PR
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
@@ -172,16 +387,18 @@ runs:
         config_in="$config_root/qcom-next.yaml"
         config_out="$GITHUB_WORKSPACE/qcom-next-pr.yaml"
 
+        # Only this PR's own topic is overridden to its branch tip; the PR head
+        # is merged on top afterwards. Dependency topics are deliberately left
+        # at whatever qcom-next.yaml pins, because the gate above has already
+        # proved that pin contains them. Overriding them to a live branch tip
+        # would test unpromoted work and make the run unreproducible.
         topics_file="$GITHUB_WORKSPACE/topic-overrides.txt"
         printf '%s\n' "$topic_branch" > "$topics_file"
-        if [ -s topic-branches ]; then
-          cut -d, -f2 topic-branches >> "$topics_file"
-        fi
         sort -u "$topics_file" -o "$topics_file"
 
         deps_file="$GITHUB_WORKSPACE/topic-dependencies.json"
-        if [ -s topic-branches ]; then
-          cut -d, -f2 topic-branches | sort -u | jq -R . | jq -s . > "$deps_file"
+        if [ -s dep-topics ]; then
+          sort -u dep-topics | jq -R . | jq -s . > "$deps_file"
         else
           jq -n '[]' > "$deps_file"
         fi
