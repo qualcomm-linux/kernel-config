@@ -79,7 +79,7 @@ jobs:
           # tty, so the rerere cache passed with -c never got a chance to
           # resolve anything. Without it a conflict is resolved from the cache
           # where possible and otherwise aborts the run, naming the topic.
-          $GITHUB_WORKSPACE/automerge/ci-merge -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/sgaud-quic/cache | tee $GITHUB_WORKSPACE/merge.log
+          $GITHUB_WORKSPACE/automerge/ci-merge -f $GITHUB_WORKSPACE/kernel-config/qcom-next.conf -t head -i qcom-next -c https://github.com/qualcomm-linux/kernel-rrcache | tee $GITHUB_WORKSPACE/merge.log
 
       - name: Parse and Add logs
         run: |
