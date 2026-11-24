@@ -19,6 +19,14 @@ on:
         description: Target repository
         type: string
         required: true
+      rerere_cache:
+        description: >
+          Shared rerere cache that automerge reads when building the tree.
+          Override to try a different cache; it must be the cache the
+          conflict resolutions were recorded in, or they are not replayed.
+        type: string
+        required: false
+        default: https://github.com/sgaud-quic/kernel-rrcache
 
 jobs:
   init-status:
@@ -47,6 +55,7 @@ jobs:
       # checked against its own pins rather than main's.
       config_repo: ${{ github.repository }}
       config_ref: ${{ github.ref_name }}
+      rerere_cache: ${{ inputs.rerere_cache }}
     strategy:
       matrix:
         check: [check-patch-compliance, check-uapi-headers, sparse-check, checkpatch,
