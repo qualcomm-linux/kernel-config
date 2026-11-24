@@ -189,7 +189,7 @@ jobs:
             "$workspace/automerge/ci-merge" \
               --yaml-config "$workspace/kernel-config/qcom-next.yaml" \
               -t head -i qcom-next \
-              -c https://github.com/sgaud-quic/cache \
+              -c https://github.com/qualcomm-linux/kernel-rrcache \
               | tee "$workspace/merge.log"
             merge_rc="${PIPESTATUS[0]}"
             set -e

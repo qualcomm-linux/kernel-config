@@ -668,7 +668,7 @@ runs:
         # reads that flag on the non-interactive path. Without both, a conflict
         # is first resolved from the cache and only aborts the run if it cannot
         # be, naming the topic that failed.
-        ../automerge/ci-merge --yaml-config ../qcom-next-pr.yaml -t head -i qcom-next -c https://github.com/sgaud-quic/cache | tee $GITHUB_WORKSPACE/merge.log
+        ../automerge/ci-merge --yaml-config ../qcom-next-pr.yaml -t head -i qcom-next -c https://github.com/qualcomm-linux/kernel-rrcache | tee $GITHUB_WORKSPACE/merge.log
 
     - name: Fetch PR
       if: inputs.repo == 'qualcomm-linux/kernel-topics'
