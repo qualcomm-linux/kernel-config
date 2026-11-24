@@ -35,13 +35,18 @@ jobs:
 
   checker:
     needs: [init-status]
-    uses: qualcomm-linux/kernel-checkers/.github/workflows/checker.yml@main
+    uses: qualcomm-linux/kernel-checkers/.github/workflows/checker.yml@test_ci_v2
     secrets: inherit
     with:
       check_name: ${{ matrix.check }}
       base_branch: ${{ inputs.ref }}
       pr_number: ${{ inputs.pr }}
       topic_repo: ${{ inputs.repo }}
+      # The checkers build their tree from qcom-next.yaml. Read it from the
+      # kernel-config branch this run was dispatched on, so a test branch is
+      # checked against its own pins rather than main's.
+      config_repo: ${{ github.repository }}
+      config_ref: ${{ github.ref_name }}
     strategy:
       matrix:
         check: [check-patch-compliance, check-uapi-headers, sparse-check, checkpatch,
