@@ -156,8 +156,8 @@ jobs:
             raw=$(docker run -i --rm --workdir="$PWD" -v "$(dirname $PWD)":"$(dirname $PWD)" ${{ inputs.docker_image }} sh -c "lavacli identities add --token ${{ secrets.LAVA_OSS_TOKEN }} --uri https://lava-oss.qualcomm.com/RPC2 --username ${{ secrets.LAVA_OSS_USER }} production && lavacli -i production jobs show $JOB_ID" 2>&1 || true)
             CURRENT_TIME=$(date +%s)
             ELAPSED_TIME=$(((CURRENT_TIME - START_TIME)/3600))
-            if [ $ELAPSED_TIME -ge 2 ]; then
-              echo "Timeout: 2 hours exceeded."
+            if [ $ELAPSED_TIME -ge 5 ]; then
+              echo "Timeout: 5 hours exceeded."
               summary=":x: Lava job exceeded time limit."
               echo "summary=$summary" >> $GITHUB_OUTPUT
               exit 1
