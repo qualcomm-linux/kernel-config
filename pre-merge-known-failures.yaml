@@ -172,107 +172,362 @@ branches:
     failures:
       - target: "*"
         name: Probe_Failure_Check
-      - target: yocto-qcs6490-rb3gen2-multimedia
+        result: fail
+      - target: kbdev-glymur-crd-multimedia
         name: gpdsp_remoteproc
         result: skip
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: USBHost
+      - target: kbdev-glymur-crd-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-glymur-crd-multimedia
+        name: UFS_Validation
         result: skip
-      - target: yocto-qcs6490-rb3gen2-multimedia
+      - target: kbdev-glymur-crd-multimedia
         name: Ethernet_Basic_Validation
         result: skip
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: Audio_Card_Registration
-        result: skip
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: kaslr
-        result: fail
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: PCIe
-        result: fail
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: Audio_Card_Registration
-        result: fail
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: KVM_Driver
-        result: fail
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: KVM_EL2_DTB
-        result: fail
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: KVM_Infra
-        result: fail
-      - target: yocto-qcs6490-rb3gen2-multimedia
-        name: KVM_Runtime_Validation
-        result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
+      - target: kbdev-hamoa-iot-evk-multimedia
         name: gpdsp_remoteproc
         result: skip
-      - target: kbdev-qcs6490-rb3gen2-multimedia
-        name: kaslr
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: smmu
         result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-hamoa-iot-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-kaanapali-mtp-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-kaanapali-mtp-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-kaanapali-mtp-multimedia
+        name: USBHost
+        result: skip
+      - target: kbdev-kaanapali-mtp-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-kaanapali-mtp-multimedia
+        name: BT_FW_KMD_Service
+        result: fail
+      - target: kbdev-kaanapali-mtp-multimedia
+        name: BT_ON_OFF
+        result: fail
+      - target: kbdev-lemans-evk-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-monaco-evk-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-purwa-iot-evk-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: kbdev-qcs8300-ride-multimedia
+        name: Audio_Card_Registration
+        result: skip
+      - target: kbdev-qcs8300-ride-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-qcs8300-ride-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: smmu
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: Ethernet_Basic_Validation
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: Audio_Card_Registration
+        result: skip
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: KVM_Driver
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: KVM_EL2_DTB
+        result: fail
+      - target: kbdev-qcs9100-ride-r3-multimedia
+        name: KVM_Infra
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: adsp_remoteproc
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: gpdsp_remoteproc
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: GIC
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: UFS_Validation
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
         name: PCIe
         result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
+      - target: kbdev-shikra-iqs-evk-multimedia
         name: USBHost
         result: skip
-      - target: kbdev-qcs6490-rb3gen2-multimedia
+      - target: kbdev-shikra-iqs-evk-multimedia
         name: Ethernet_Basic_Validation
+        result: fail
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: WiFi_OnOff
         result: skip
-      - target: kbdev-qcs6490-rb3gen2-multimedia
+      - target: kbdev-shikra-iqs-evk-multimedia
+        name: DSP_AudioPD
+        result: skip
+      - target: kbdev-shikra-iqs-evk-multimedia
         name: Audio_Card_Registration
-        result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
-        name: KVM_Driver
-        result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
-        name: KVM_EL2_DTB
-        result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
-        name: KVM_Infra
-        result: fail
-      - target: kbdev-qcs6490-rb3gen2-multimedia
-        name: KVM_Runtime_Validation
-        result: fail
-      - target: yocto-lemans-evk-multimedia
-        name: smmu
-        result: fail
-      - target: yocto-lemans-evk-multimedia
-        name: kaslr
-        result: fail
-      - target: yocto-lemans-evk-multimedia
-        name: KVM_Driver
-        result: fail
-      - target: yocto-lemans-evk-multimedia
-        name: KVM_EL2_DTB
-        result: fail
-      - target: yocto-lemans-evk-multimedia
-        name: KVM_Infra
-        result: fail
-      - target: yocto-lemans-evk-multimedia
-        name: KVM_Runtime_Validation
-        result: fail
-      - target: kbdev-lemans-evk-multimedia
-        name: kaslr
-        result: fail
-      - target: kbdev-lemans-evk-multimedia
-        name: USBHost
-        result: fail
-      - target: kbdev-lemans-evk-multimedia
+        result: skip
+      - target: yocto-glymur-crd-proprietary
         name: Ethernet_Basic_Validation
         result: skip
-      - target: kbdev-lemans-evk-multimedia
-        name: KVM_Driver
+      - target: yocto-glymur-crd-proprietary
+        name: UFS_Validation
+        result: skip
+      - target: yocto-glymur-crd-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-glymur-crd-proprietary
+        name: etm_trace
         result: fail
-      - target: kbdev-lemans-evk-multimedia
-        name: KVM_EL2_DTB
+      - target: yocto-glymur-crd-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-glymur-crd-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-glymur-crd-proprietary
+        name: Audio_Record_Playback
         result: fail
-      - target: kbdev-lemans-evk-multimedia
-        name: KVM_Infra
+      - target: yocto-glymur-crd-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-glymur-crd-proprietary
+        name: EFI_Variable_Validation
         result: fail
-      - target: kbdev-lemans-evk-multimedia
-        name: KVM_Runtime_Validation
-      - target: yocto-lemans-evk-multimedia
-        name: smmu
+      - target: yocto-glymur-crd-proprietary
+        name: Module_Reload_Validation
         result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: etm_trace
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-kaanapali-mtp-proprietary
+        name: BT_FW_KMD_Service
+        result: fail
+      - target: yocto-kaanapali-mtp-proprietary
+        name: BT_ON_OFF
+        result: fail
+      - target: yocto-lemans-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-lemans-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-lemans-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-lemans-evk-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-lemans-evk-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-monaco-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-monaco-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-monaco-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-qcs615-ride-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-qcs615-ride-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-qcs615-ride-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-qcs615-ride-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-qcs615-ride-proprietary
+        name: AudioPlayback
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: USBHost
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-qcs8300-ride-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-qcs8300-ride-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-qcs8300-ride-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-qcs8300-ride-proprietary
+        name: AudioPlayback
+        result: skip
+      - target: yocto-qcs8300-ride-proprietary
+        name: AudioRecord
+        result: skip
+      - target: yocto-qcs9100-ride-r3-proprietary
+        name: Ethernet_Basic_Validation
+        result: fail
+      - target: yocto-qcs9100-ride-r3-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-qcs9100-ride-r3-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-qcs9100-ride-r3-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-qcs9100-ride-r3-proprietary
+        name: AudioPlayback
+        result: skip
+      - target: yocto-qcs9100-ride-r3-proprietary
+        name: AudioRecord
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: Ethernet_Basic_Validation
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: WiFi_OnOff
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: GIC
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: PCIe
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: UFS_Validation
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: USBHost
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: adsp_remoteproc
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: AudioPlayback
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: AudioRecord
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: USBHost
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: Audio_Record_Playback
+        result: fail
+      - target: yocto-sm8750-mtp-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: weston-simple-egl
+        result: fail
+      - target: yocto-sm8750-mtp-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      
