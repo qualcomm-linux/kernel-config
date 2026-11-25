@@ -303,5 +303,6 @@ runs:
           export BOOT_METHOD=flasher
           echo "QDL target $TARGET"
           echo "QDL target DTB $TARGET_DTB"
+          EXTRA_ARGS="${EXTRA_ARGS} --tag qcom-next_ci --testkit_revision testkit-2026.09.20"
           python3 lava_Job_definition_generator.py --localjson ./data/cloudData.json ${EXTRA_ARGS}
         fi
