@@ -235,6 +235,6 @@
     "storage": "spinor",
     "hypervisor": "gunyah",
     "build_types": ["kbdev", "yocto"],
-    "branches": ["qcom-next-staging"]
+    "branches": ["qcom-next-staging", "qcom-7.3-es"]
   }
 }
