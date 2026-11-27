@@ -558,20 +558,15 @@ jobs:
             fi
           }
 
-          # Both pipelines default to the same owner/repo/run-attempt prefix, so
-          # in one run they usually resolve to a single location.
+          # Each pipeline uploads to its own subdirectory of the run prefix
+          # (.../<run_id>-<run_attempt>/kbdev and .../yocto).
+          rows="$(row kbdev "$KBDEV_LOCATION"; row Yocto "$YOCTO_LOCATION")"
           locations=()
-          if [ -n "$KBDEV_LOCATION" ] && [ "$KBDEV_LOCATION" = "$YOCTO_LOCATION" ]; then
-            rows="$(row 'kbdev + Yocto' "$KBDEV_LOCATION")"
-            locations=("$KBDEV_LOCATION")
-          else
-            rows="$(row kbdev "$KBDEV_LOCATION"; row Yocto "$YOCTO_LOCATION")"
-            if [ -n "$KBDEV_LOCATION" ]; then
-              locations+=("$KBDEV_LOCATION")
-            fi
-            if [ -n "$YOCTO_LOCATION" ]; then
-              locations+=("$YOCTO_LOCATION")
-            fi
+          if [ -n "$KBDEV_LOCATION" ]; then
+            locations+=("$KBDEV_LOCATION")
+          fi
+          if [ -n "$YOCTO_LOCATION" ]; then
+            locations+=("$YOCTO_LOCATION")
           fi
 
           {
@@ -588,7 +583,7 @@ jobs:
               echo ""
               echo '```sh'
               for location in "${locations[@]}"; do
-                echo "wget -r -np -nH --cut-dirs=3 ${ARTIFACT_BASE_URL}/${S3_BUCKET}/${location}/"
+                echo "wget -r -np -nH --cut-dirs=4 ${ARTIFACT_BASE_URL}/${S3_BUCKET}/${location}/"
                 echo "aws s3 cp --recursive s3://${S3_BUCKET}/${location}/ ."
               done
               echo '```'

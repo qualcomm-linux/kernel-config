@@ -175,5 +175,8 @@ runs:
         s3_bucket: ${{ env.s3_bucket }}
         local_file: ${{ env.workspace }}/file_list.txt
         mode: multi-upload
+        # Several build pipelines can run under the same run id, so keep
+        # each one in its own prefix.
+        upload_subdir: yocto
       env:
         machine: ${{ inputs.rootfs }}_
