@@ -9,6 +9,15 @@ branches:
       - target: "*"
         name: Probe_Failure_Check
         result: fail
+      - target: "*"
+        name: Audio_Record_Playback
+        result: fail
+      - target: "*"
+        name: Video_Encode_Decode
+        result: skip
+      - target: "*"
+        name: UserDataEncryption
+        result: skip
       - target: kbdev-hamoa-iot-evk-multimedia
         name: Ethernet_Basic_Validation
         result: skip
@@ -168,11 +177,137 @@ branches:
       - target: kbdev-shikra-iqs-evk-multimedia
         name: WiFi_OnOff
         result: skip
+      - target: yocto-sm8750-mtp-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-glymur-crd-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-qcs615-ride-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-lemans-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-monaco-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: etm_trace
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: etm_trace
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: Ethernet_Basic_Validation
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: BT_SCAN
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: WiFi_OnOff
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: GIC
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: PCIe
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: UFS_Validation
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: USBHost
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: adsp_remoteproc
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: AudioPlayback
+        result: skip
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: AudioRecord
+        result: skip
   qcom-next:
     failures:
       - target: "*"
         name: Probe_Failure_Check
         result: fail
+      - target: "*"
+        name: Audio_Record_Playback
+        result: fail
+      - target: "*"
+        name: Video_Encode_Decode
+        result: skip
+      - target: "*"
+        name: qcrypto
+        result: skip
+      - target: "*"
+        name: UserDataEncryption
+        result: skip
       - target: kbdev-glymur-crd-multimedia
         name: gpdsp_remoteproc
         result: skip
@@ -315,6 +450,9 @@ branches:
         name: Ethernet_Basic_Validation
         result: skip
       - target: yocto-glymur-crd-proprietary
+        name: fastrpc_test
+        result: skip
+      - target: yocto-glymur-crd-proprietary
         name: UFS_Validation
         result: skip
       - target: yocto-glymur-crd-proprietary
@@ -365,6 +503,30 @@ branches:
       - target: yocto-hamoa-iot-evk-proprietary
         name: Module_Reload_Validation
         result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Buses
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: etm_trace
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: UserDataEncryption
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: gpdsp_remoteproc
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: qcrypto
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Video_Encode_Decode
+        result: skip
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Module_Reload_Validation
+        result: fail
       - target: yocto-kaanapali-mtp-proprietary
         name: BT_FW_KMD_Service
         result: fail
@@ -390,6 +552,9 @@ branches:
         name: Buses
         result: fail
       - target: yocto-monaco-evk-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-monaco-evk-proprietary
         name: UserDataEncryption
         result: skip
       - target: yocto-monaco-evk-proprietary
@@ -397,6 +562,9 @@ branches:
         result: skip
       - target: yocto-qcs615-ride-proprietary
         name: Ethernet_Basic_Validation
+        result: skip
+      - target: yocto-qcs615-ride-proprietary
+        name: AudioRecord
         result: skip
       - target: yocto-qcs615-ride-proprietary
         name: UserDataEncryption
@@ -466,6 +634,9 @@ branches:
         result: skip
       - target: yocto-shikra-iqs-evk-proprietary
         name: Ethernet_Basic_Validation
+        result: fail
+      - target: yocto-shikra-iqs-evk-proprietary
+        name: BT_SCAN
         result: fail
       - target: yocto-shikra-iqs-evk-proprietary
         name: WiFi_OnOff
@@ -530,4 +701,27 @@ branches:
       - target: yocto-sm8750-mtp-proprietary
         name: Module_Reload_Validation
         result: fail
-      
+      - target: yocto-sm8750-mtp-proprietary
+        name: Module_Reload_Validation
+        result: fail
+      - target: yocto-glymur-crd-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-hamoa-iot-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-purwa-iot-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-qcs615-ride-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-qcs6490-rb3gen2-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-lemans-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
+      - target: yocto-monaco-evk-proprietary
+        name: Video_V4L2_Runner
+        result: fail
