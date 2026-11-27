@@ -25,6 +25,13 @@ inputs:
     description: Upload location
     required: false
     default: ${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.run_id }}-${{ github.run_attempt }}
+  upload_subdir:
+    description: >
+      Subdirectory appended to upload_location. Pipelines that share a run id
+      (kbdev, Yocto, Ubuntu builds, per-machine LAVA job data) must set this so
+      they do not overwrite each other's objects.
+    required: false
+    default: ''
 
 outputs:
   presigned_url:
@@ -32,7 +39,7 @@ outputs:
     value: ${{ steps.sync-data.outputs.presigned_url }}
   s3_location:
     description: Upload location
-    value: ${{ inputs.upload_location }}
+    value: ${{ inputs.upload_subdir != '' && format('{0}/{1}', inputs.upload_location, inputs.upload_subdir) || inputs.upload_location }}
 
 runs:
   using: "composite"
@@ -41,7 +48,7 @@ runs:
       id: sync-data
       shell: bash
       env:
-        UPLOAD_LOCATION: ${{ inputs.upload_location }}
+        UPLOAD_LOCATION: ${{ inputs.upload_subdir != '' && format('{0}/{1}', inputs.upload_location, inputs.upload_subdir) || inputs.upload_location }}
       run: |
         echo "::group::$(printf '__________ %-100s' 'Process' | tr ' ' _)"
         case "${{ inputs.mode }}" in
@@ -75,10 +82,15 @@ runs:
             ;;
           single-upload)
             echo "Uploading single file to S3 bucket..."
-            aws s3 cp "${{ inputs.local_file }}" s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/
-            echo "Uploaded ${{ inputs.local_file }} to s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}"
-            echo "Creating Pre-signed URL for ${{ inputs.local_file }}..."
-            presigned_url=$(aws s3 presign s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/${{ inputs.local_file }} --expires-in 259200)
+            # The object key is the basename, so presign that and not the
+            # local path: a relative path such as ../dir/file.json would
+            # otherwise sign a key containing ".." that does not exist.
+            filename="$(basename "${{ inputs.local_file }}")"
+            s3_uri="s3://${{ inputs.s3_bucket }}/${{ env.UPLOAD_LOCATION }}/${filename}"
+            aws s3 cp "${{ inputs.local_file }}" "$s3_uri"
+            echo "Uploaded ${{ inputs.local_file }} to $s3_uri"
+            echo "Creating Pre-signed URL for $s3_uri..."
+            presigned_url=$(aws s3 presign "$s3_uri" --expires-in 259200)
             echo "presigned_url=${presigned_url}" >> "$GITHUB_OUTPUT"
             ;;
           download)
