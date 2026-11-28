@@ -1,0 +1,1013 @@
+---
+# Opens a single qcom-next.yaml PR carrying the current tip of every topic
+# branch, so topic maintainers no longer raise one promotion PR each.
+#
+# The tips are proved to merge before they are proposed. automerge runs here
+# first, conflicting topics are dropped back to their existing pins, and only
+# the survivors are written to the generated PR. The SHAs are not tagged or
+# pushed by this workflow.
+#
+# One PR at a time, by design. If a PR that touches qcom-next.yaml is already
+# open the run bails out instead of opening a second one: two open PRs editing
+# the same topic entries conflict on merge, and the candidate built from either
+# would not describe what the other proposes.
+name: qcom-next sync topic tips
+run-name: >-
+  ${{ inputs.dry_run == true &&
+      'qcom-next sync topic tips (dry run)' ||
+      'qcom-next sync topic tips' }}
+
+on:
+  schedule:
+    # Daily at 01:00 UTC, ahead of the batch dispatcher's half-hourly run.
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >
+          Resolve tips and run automerge, but push no branch and open no PR.
+        type: boolean
+        required: false
+        default: false
+      config_file:
+        description: >
+          Config to read and update. Use qcom-next-stg.yaml to rehearse the
+          flow against the staging topic repository.
+        type: string
+        required: false
+        default: qcom-next.yaml
+      source_topics_repo:
+        description: >
+          Repository to read topic branch tips from and record against every
+          topic in the updated config. Leave empty to use the production topic
+          repository.
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+  # Conflicting topics are reported to their maintainers as issues.
+  issues: write
+
+# Never two of these at once; a second run would race the bail-out check and
+# could open a competing config PR.
+concurrency:
+  group: qcom-next-sync-tips
+  cancel-in-progress: false
+
+env:
+  TOPICS_REPO: qualcomm-linux/kernel-topics
+  AUTOMERGE_REPO: sgaud-quic/automerge
+  AUTOMERGE_REF: sha_config_yaml
+  RERERE_CACHE: https://github.com/qualcomm-linux/kernel-rrcache
+
+jobs:
+  sync:
+    name: Open a qcom-next.yaml PR for the current topic tips
+    # The staging kernel-config has its own runner pool, so the pool is picked
+    # from the repository owner rather than hardcoded: one file then works in
+    # both repositories and does not have to be edited when it is promoted.
+    # The two repository variables override it if a pool is ever renamed.
+    runs-on:
+      group: >-
+        ${{ vars.KERNEL_RUNNER_GROUP ||
+            (github.repository_owner == 'qualcomm-linux-stg'
+             && 'GHA-Kernel-Stg-SelfHosted-RG'
+             || 'GHA-Kernel-SelfHosted-RG') }}
+      labels: >-
+        ${{ fromJSON(vars.KERNEL_RUNNER_LABELS ||
+            (github.repository_owner == 'qualcomm-linux-stg'
+             && '["self-hosted", "kernel-stg-u2404-x64-large-od-ephem"]'
+             || '["self-hosted", "kernel-prd-u2404-x64-large-od-ephem"]')) }}
+    steps:
+      - name: Checkout kernel-config
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: kernel-config
+          token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+
+      # Any open PR touching the selected config blocks this run, not just one this
+      # workflow raised: a maintainer's manual promotion conflicts just as much.
+      # Resolve the config and source repository once.
+      - name: Resolve run settings
+        id: settings
+        run: |
+          set -euo pipefail
+          config="${{ inputs.config_file || 'qcom-next.yaml' }}"
+          source_repo="${{ inputs.source_topics_repo }}"
+
+          # Default the source to the production topic repository, which is the
+          # normal production behaviour.
+          [ -n "$source_repo" ] || source_repo="https://github.com/${TOPICS_REPO}.git"
+
+          if [ ! -f "kernel-config/$config" ]; then
+            echo "::error title=qcom-next sync::$config is not present in kernel-config"
+            exit 1
+          fi
+
+          {
+            echo "config=$config"
+            echo "source_repo=$source_repo"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "config=$config"
+          echo "tips read from and recorded as  $source_repo"
+
+      - name: Check for an open config PR
+        id: guard
+        working-directory: kernel-config
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          TRACKED_FILE: ${{ steps.settings.outputs.config }}
+        run: |
+          set -euo pipefail
+          base="${GITHUB_REF_NAME}"
+          echo "base_branch=$base" >> "$GITHUB_OUTPUT"
+
+          # The GitHub API is called with curl and python3 rather than the
+          # gh CLI: gh is not installed on every runner image this workflow
+          # runs on.
+          blocking="$(BASE="$base" python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          API = "https://api.github.com"
+          repo = os.environ["GITHUB_REPOSITORY"]
+          base = os.environ["BASE"]
+          tracked = os.environ["TRACKED_FILE"]
+          token = os.environ.get("GH_TOKEN", "")
+
+
+          def api(path):
+              request = urllib.request.Request(f"{API}{path}")
+              request.add_header("Accept", "application/vnd.github+json")
+              request.add_header("X-GitHub-Api-Version", "2022-11-28")
+              if token:
+                  request.add_header("Authorization", f"Bearer {token}")
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.loads(response.read())
+
+
+          blocking = []
+          try:
+              pulls = api(f"/repos/{repo}/pulls?state=open&base={base}&per_page=100")
+          except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+              # Guessing "nothing is open" could open a competing PR, so stop.
+              raise SystemExit(f"could not list open PRs: {error}")
+
+          for pull in pulls:
+              number = pull["number"]
+              try:
+                  files = api(f"/repos/{repo}/pulls/{number}/files?per_page=100")
+              except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+                  raise SystemExit(f"could not list files of #{number}: {error}")
+              if any(entry.get("filename") == tracked for entry in files):
+                  # Diagnostics on stderr; only the list is captured.
+                  print(f"blocking: #{number} {pull['title']}", file=sys.stderr)
+                  blocking.append(f"#{number}")
+
+          print(", ".join(blocking))
+          PY
+          )"
+
+          if [ -n "$blocking" ]; then
+            echo "blocked_by=$blocking" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=qcom-next sync::bailing out: ${blocking} already open against ${TRACKED_FILE}"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "No open PR touches ${TRACKED_FILE}; continuing."
+          fi
+
+      - name: Resolve topic branch tips
+        id: resolve
+        working-directory: kernel-config
+        env:
+          CHANGES_FILE: ${{ runner.temp }}/changes.json
+          TOPICS_FILE: ${{ runner.temp }}/topics.json
+          SYNC_CONFIG: ${{ steps.settings.outputs.config }}
+          SOURCE_REPO: ${{ steps.settings.outputs.source_repo }}
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+
+          # Read the topics from the config, ask the source repository for the
+          # current tip of each branch, and record the ones that moved.
+          python3 <<'PY'
+          import json
+          import os
+          import subprocess
+
+          path = os.environ["SYNC_CONFIG"]
+          source_repo = os.environ.get("SOURCE_REPO") or ""
+
+
+          def topics(config):
+              """Return [{name, repo, branch, sha, tag}] in file order."""
+              found = []
+              block = []
+
+              def flush():
+                  if not block:
+                      return
+                  entry = {}
+                  for line in block:
+                      stripped = line.strip()
+                      # The first line of a block is "- name: <topic>", so the
+                      # list marker has to come off before matching the key.
+                      if stripped.startswith("- "):
+                          stripped = stripped[2:]
+                      for field in ("name", "repo", "branch", "sha", "tag"):
+                          if stripped.startswith(f"{field}:"):
+                              entry[field] = (
+                                  stripped.split(":", 1)[1].strip().strip('"')
+                              )
+                              break
+                  if entry.get("name"):
+                      entry.setdefault("branch", entry["name"])
+                      found.append(entry)
+
+              in_topics = False
+              with open(config, encoding="utf-8") as handle:
+                  for line in handle:
+                      if line.startswith("topics:"):
+                          in_topics = True
+                          continue
+                      if not in_topics:
+                          continue
+                      if line.startswith("  - name:"):
+                          flush()
+                          block = [line]
+                          continue
+                      if block:
+                          block.append(line)
+              flush()
+              return found
+
+
+          entries = topics(path)
+          print(f"topics in {path}: {len(entries)}")
+
+          changed, unchanged, missing = [], [], []
+          for entry in entries:
+              # The source override decides where tips are read from; the repo
+              # in the config is only the fallback.
+              repo = source_repo or entry.get("repo") or ""
+              branch = entry["branch"]
+              if not repo:
+                  missing.append({"name": entry["name"], "reason": "no repo in config"})
+                  continue
+              result = subprocess.run(
+                  ["git", "ls-remote", repo, f"refs/heads/{branch}"],
+                  capture_output=True,
+                  text=True,
+              )
+              if result.returncode != 0:
+                  missing.append(
+                      {"name": entry["name"],
+                       "reason": f"ls-remote failed: {result.stderr.strip()[:120]}"}
+                  )
+                  continue
+              out = result.stdout.split()
+              if not out:
+                  missing.append(
+                      {"name": entry["name"], "reason": f"branch '{branch}' not found"}
+                  )
+                  continue
+              tip = out[0]
+              old = entry.get("sha", "")
+              if tip == old:
+                  unchanged.append(entry["name"])
+              else:
+                  changed.append(
+                      {"name": entry["name"], "branch": branch, "repo": repo,
+                       "old": old, "new": tip, "tag": entry.get("tag", "")}
+                  )
+
+          for item in changed:
+              print(f"  moved     {item['name']}: {item['old'][:12]} -> {item['new'][:12]}")
+          for name in unchanged:
+              print(f"  unchanged {name}")
+          for item in missing:
+              print(f"  SKIPPED   {item['name']}: {item['reason']}")
+
+          # A topic that cannot be resolved is reported and skipped rather than
+          # failing the run, so one stale config entry cannot block every other
+          # topic from being proposed. It stays visible in the PR body.
+          if missing:
+              names = ", ".join(item["name"] for item in missing)
+              print(f"::warning title=qcom-next sync::could not resolve: {names}")
+
+          with open(os.environ["CHANGES_FILE"], "w", encoding="utf-8") as handle:
+              json.dump({"changed": changed, "unchanged": unchanged,
+                         "missing": missing}, handle, indent=2)
+
+          # Every topic with its pinned sha and tag, so the tag step can mirror
+          # the tags that already exist without re-parsing the config.
+          with open(os.environ["TOPICS_FILE"], "w", encoding="utf-8") as handle:
+              json.dump(entries, handle, indent=2)
+
+          github_output = os.environ.get("GITHUB_OUTPUT")
+          if github_output:
+              with open(github_output, "a", encoding="utf-8") as handle:
+                  handle.write(f"changed_count={len(changed)}\n")
+                  handle.write(f"unchanged_count={len(unchanged)}\n")
+                  handle.write(f"missing_count={len(missing)}\n")
+          PY
+
+      # One implementation of the rewrite, used by the validate loop below and
+      # by the final apply, so a trial candidate and the committed config can
+      # never disagree about what the proposal is.
+      - name: Install the config rewriter
+        if: steps.guard.outputs.proceed == 'true' && steps.resolve.outputs.changed_count != '0'
+        env:
+          REWRITER: ${{ runner.temp }}/apply_tips.py
+        run: |
+          set -euo pipefail
+          cat > "$REWRITER" <<'PY'
+          """Rewrite the qcom-next config with the resolved topic tips.
+
+          Each changed topic that is not dropped gets its sha set to the tip
+          and has any tag line removed. Conflicting topics are dropped from the
+          rewrite and keep their last known-good input config entry.
+
+          --set-repo rewrites the repo of every topic, changed or not. The
+          trial candidate and committed config point at the repository the tips
+          were read from, because that is where the untagged commits are
+          reachable through their topic branches.
+          """
+          import argparse
+          import json
+          import sys
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--config", required=True)
+              parser.add_argument("--out", required=True)
+              parser.add_argument("--changes", required=True)
+              parser.add_argument("--dropped", help="JSON array of topic names")
+              parser.add_argument("--set-repo", help="rewrite every topic's repo")
+              args = parser.parse_args()
+
+              with open(args.changes, encoding="utf-8") as handle:
+                  changed = {i["name"]: i for i in json.load(handle)["changed"]}
+              dropped = set()
+              if args.dropped:
+                  with open(args.dropped, encoding="utf-8") as handle:
+                      dropped = set(json.load(handle))
+
+              wanted = {n: i for n, i in changed.items() if n not in dropped}
+
+              with open(args.config, encoding="utf-8") as handle:
+                  lines = handle.readlines()
+
+              out, block, applied = [], [], set()
+
+              def emit(line):
+                  """Apply --set-repo to any topic, promoted or not."""
+                  stripped = line.strip()
+                  if args.set_repo and stripped.startswith("repo:"):
+                      out.append(f'    repo: "{args.set_repo}"\n')
+                  else:
+                      out.append(line)
+
+              def flush(topic_block):
+                  if not topic_block:
+                      return
+                  name = None
+                  for line in topic_block:
+                      stripped = line.strip()
+                      # "- name: <topic>" on the first line of the block.
+                      if stripped.startswith("- "):
+                          stripped = stripped[2:]
+                      for field in ("name:", "branch:"):
+                          if stripped.startswith(field):
+                              value = stripped.split(":", 1)[1].strip().strip('"')
+                              if value in wanted:
+                                  name = value
+                              break
+                      if name:
+                          break
+                  if name is None:
+                      for line in topic_block:
+                          emit(line)
+                      return
+                  applied.add(name)
+                  for line in topic_block:
+                      stripped = line.strip()
+                      if stripped.startswith("sha:"):
+                          out.append(f"    sha: {wanted[name]['new']}\n")
+                      elif stripped.startswith("tag:"):
+                          continue
+                      else:
+                          emit(line)
+
+              in_topics = False
+              for line in lines:
+                  if line.startswith("topics:"):
+                      in_topics = True
+                      out.append(line)
+                      continue
+                  if in_topics and line.startswith("  - name:"):
+                      flush(block)
+                      block = [line]
+                      continue
+                  if in_topics and block:
+                      block.append(line)
+                  else:
+                      out.append(line)
+              flush(block)
+
+              unapplied = sorted(set(wanted) - applied)
+              if unapplied:
+                  print(
+                      "ERROR: resolved a new tip for topics that could not be "
+                      f"rewritten in {args.config}: {', '.join(unapplied)}",
+                      file=sys.stderr,
+                  )
+                  return 1
+
+              with open(args.out, "w", encoding="utf-8") as handle:
+                  handle.writelines(out)
+              print(f"rewrote {len(applied)} topic(s) into {args.out}")
+              return 0
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PY
+          python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$REWRITER"
+          echo "rewriter installed at $REWRITER"
+
+      # ci-merge runs in a kernel-topics clone, as the production candidate
+      # build does, with full history and tags. A pinned sha is often behind
+      # the branch tip and, after a rebase, reachable only through its tag. The
+      # baseline is fetched from whatever the config names.
+      - name: Clone the topic tree and automerge
+        if: steps.guard.outputs.proceed == 'true' && steps.resolve.outputs.changed_count != '0'
+        env:
+          SOURCE_REPO: ${{ steps.settings.outputs.source_repo }}
+        run: |
+          set -euo pipefail
+          rm -rf kernel-topics automerge
+          git clone "$SOURCE_REPO" kernel-topics
+          git -C kernel-topics fetch --tags --quiet origin
+          git clone --branch "$AUTOMERGE_REF" \
+            "https://github.com/${AUTOMERGE_REPO}.git" automerge
+          git -C kernel-topics config user.name "github-actions"
+          git -C kernel-topics config user.email "github-actions@github.com"
+          echo "branches: $(git -C kernel-topics ls-remote --heads origin | wc -l)"
+          echo "tags:     $(git -C kernel-topics tag | wc -l)"
+
+      # Prove the tips merge before proposing them. A conflicting tip is held
+      # back at its existing pin and the candidate is rebuilt, so one
+      # unmergeable tip cannot block every other topic from being proposed.
+      - name: Validate the tips with automerge
+        id: validate
+        if: steps.guard.outputs.proceed == 'true' && steps.resolve.outputs.changed_count != '0'
+        env:
+          CHANGES_FILE: ${{ runner.temp }}/changes.json
+          REWRITER: ${{ runner.temp }}/apply_tips.py
+          DROPPED_FILE: ${{ runner.temp }}/dropped.json
+          FALLBACK_CONFLICTS_FILE: ${{ runner.temp }}/fallback-conflicts.json
+          TRIAL_CONFIG: ${{ runner.temp }}/trial.yaml
+          SYNC_CONFIG: ${{ steps.settings.outputs.config }}
+          SOURCE_REPO: ${{ steps.settings.outputs.source_repo }}
+        run: |
+          set -euo pipefail
+          helper="${GITHUB_WORKSPACE}/kernel-config/.github/scripts/qcom_next_topics.py"
+          echo '[]' > "$DROPPED_FILE"
+          echo '[]' > "$FALLBACK_CONFLICTS_FILE"
+
+          # blame --prs takes a path, not inline JSON. There are no promotion
+          # PRs to attribute a conflict to here, so the list is empty and every
+          # conflict comes back as unattributed, which is what is wanted.
+          no_prs="${RUNNER_TEMP}/no-prs.json"
+          echo '[]' > "$no_prs"
+          moved="$(python3 -c 'import json,sys; print(" ".join(i["name"] for i in json.load(open(sys.argv[1]))["changed"]))' "$CHANGES_FILE")"
+          attempt=1
+
+          while :; do
+            echo "::group::candidate attempt ${attempt}"
+            # Point the trial at the source repository, where the untagged tips
+            # are reachable through their topic branches.
+            python3 "$REWRITER" \
+              --config "${GITHUB_WORKSPACE}/kernel-config/${SYNC_CONFIG}" \
+              --out "$TRIAL_CONFIG" \
+              --changes "$CHANGES_FILE" \
+              --dropped "$DROPPED_FILE" \
+              --set-repo "$SOURCE_REPO"
+
+            rm -f kernel-topics/topic_SHA1 kernel-topics/topic_conflict
+            set +e
+            # CONFIG is unset deliberately: ci-merge never initialises it, so
+            # a CONFIG in the environment is read as --config and collides
+            # with --yaml-config ("Use either --config or --yaml-config").
+            ( cd kernel-topics && unset CONFIG \
+              && "${GITHUB_WORKSPACE}/automerge/ci-merge" \
+                --yaml-config "$TRIAL_CONFIG" \
+                -t head -i qcom-next \
+                -c "$RERERE_CACHE" ) | tee "${RUNNER_TEMP}/merge.log"
+            merge_rc="${PIPESTATUS[0]}"
+            set -e
+            echo "ci-merge exit=${merge_rc}"
+            echo "::endgroup::"
+
+            # Reuse the existing conflict parser rather than re-reading
+            # automerge's output format here.
+            blame="$(python3 "$helper" blame --prs "$no_prs" \
+              --conflicts kernel-topics/topic_conflict \
+              --merge-log "${RUNNER_TEMP}/merge.log")"
+            conflicts="$(printf '%s' "$blame" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin).get("conflicts") or []))')"
+
+            if [ "$merge_rc" -eq 0 ] && [ -z "$conflicts" ]; then
+              echo "tips merge cleanly"
+              break
+            fi
+
+            # A non-zero exit with no conflicting topic is not something
+            # dropping a topic can fix; failing is the honest outcome.
+            if [ -z "$conflicts" ]; then
+              echo "::error title=qcom-next sync::automerge failed (exit ${merge_rc}) without naming a conflicting topic. See merge.log."
+              exit 1
+            fi
+
+            # A conflict in a topic this run did not move is pre-existing: its
+            # pin is already in qcom-next.yaml and dropping it is not possible.
+            outside=""
+            for topic in $conflicts; do
+              case " $moved " in
+                *" $topic "*) ;;
+                *) outside="${outside}${outside:+ }$topic" ;;
+              esac
+            done
+            if [ -n "$outside" ]; then
+              echo "::error title=qcom-next sync::topic(s) already pinned in qcom-next.yaml conflict: ${outside}. This run did not move them, so it cannot fix it."
+              exit 1
+            fi
+
+            # The first conflict of a moved topic holds its new tip back at the
+            # previously promoted pin. If that retained pin also conflicts on
+            # the next candidate, retrying cannot make progress: the rerere
+            # cache must be updated before a candidate containing this topic
+            # can be built.
+            fallback_conflicts="$(python3 -c 'import json,sys; dropped=set(json.load(open(sys.argv[1]))); conflicts=sys.argv[2].split(); print(" ".join(topic for topic in conflicts if topic in dropped))' \
+              "$DROPPED_FILE" "$conflicts")"
+            if [ -n "$fallback_conflicts" ]; then
+              python3 -c 'import json,sys; json.dump(sys.argv[2].split(), open(sys.argv[1], "w"))' \
+                "$FALLBACK_CONFLICTS_FILE" "$fallback_conflicts"
+              echo "::error title=qcom-next sync::topic(s) still conflict at their retained pin: ${fallback_conflicts}. Update the rerere cache before retrying."
+              exit 1
+            fi
+
+            echo "::warning title=qcom-next sync::dropping conflicting topic(s): ${conflicts}"
+            # Kept to one line on purpose: a heredoc inside this loop would
+            # need its terminator at column 0, which the block indentation
+            # here cannot give it.
+            python3 -c 'import json, sys; path = sys.argv[1]; dropped = json.load(open(path)); json.dump(sorted(set(dropped) | set(sys.argv[2].split())), open(path, "w"))' \
+              "$DROPPED_FILE" "$conflicts"
+
+            remaining="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["changed"]; d=set(json.load(open(sys.argv[2]))); print(len([i for i in c if i["name"] not in d]))' "$CHANGES_FILE" "$DROPPED_FILE")"
+            if [ "$remaining" -eq 0 ]; then
+              echo "::notice title=qcom-next sync::every moved topic conflicted; nothing left to promote"
+              echo "survivors=0" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            attempt=$((attempt + 1))
+          done
+
+          survivors="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["changed"]; d=set(json.load(open(sys.argv[2]))); print(len([i for i in c if i["name"] not in d]))' "$CHANGES_FILE" "$DROPPED_FILE")"
+          dropped_count="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$DROPPED_FILE")"
+          echo "survivors=$survivors" >> "$GITHUB_OUTPUT"
+          echo "dropped_count=$dropped_count" >> "$GITHUB_OUTPUT"
+          echo "survivors=$survivors dropped=$dropped_count"
+
+      - name: Apply the tips to the config
+        id: apply
+        if: >-
+          steps.guard.outputs.proceed == 'true'
+          && steps.resolve.outputs.changed_count != '0'
+          && steps.validate.outputs.survivors != '0'
+        working-directory: kernel-config
+        env:
+          CHANGES_FILE: ${{ runner.temp }}/changes.json
+          DROPPED_FILE: ${{ runner.temp }}/dropped.json
+          REWRITER: ${{ runner.temp }}/apply_tips.py
+          PR_BODY_FILE: ${{ runner.temp }}/pr_body.md
+          COMMIT_MSG_FILE: ${{ runner.temp }}/commit_msg.txt
+          DRY_RUN: ${{ inputs.dry_run }}
+          SYNC_CONFIG: ${{ steps.settings.outputs.config }}
+          SOURCE_REPO: ${{ steps.settings.outputs.source_repo }}
+        run: |
+          set -euo pipefail
+
+          date_stamp="$(date -u +%Y%m%d)"
+          pr_branch="tmp/qcom-next-sync-tips-${date_stamp}-${GITHUB_RUN_ID}"
+          echo "pr_branch=$pr_branch" >> "$GITHUB_OUTPUT"
+          git checkout -B "$pr_branch" "origin/${GITHUB_REF_NAME}"
+
+          # The committed config points at the repository where the branch tips
+          # were read from. Surviving moved topics are pinned by SHA only; this
+          # workflow does not create, push, or record topic tags.
+          python3 "$REWRITER" \
+            --config "$SYNC_CONFIG" \
+            --out "$SYNC_CONFIG" \
+            --changes "$CHANGES_FILE" \
+            --dropped "$DROPPED_FILE" \
+            --set-repo "$SOURCE_REPO"
+
+          python3 <<'PY'
+          import json
+          import os
+
+          with open(os.environ["CHANGES_FILE"], encoding="utf-8") as handle:
+              data = json.load(handle)
+          with open(os.environ["DROPPED_FILE"], encoding="utf-8") as handle:
+              dropped = set(json.load(handle))
+          survivors = [i for i in data["changed"] if i["name"] not in dropped]
+          held = [i for i in data["changed"] if i["name"] in dropped]
+          dry = os.environ.get("DRY_RUN", "") == "true"
+
+          rows = "".join(
+              f"| `{i['name']}` | `{(i['old'] or '-')[:12]}` | "
+              f"`{i['new'][:12]}` |\n"
+              for i in survivors
+          )
+          body = [
+              "Promote the current tip of every topic branch that has moved.",
+              "",
+              "Raised automatically; no topic maintainer action was needed to",
+              "open it. automerge was run before the tips were recorded, so",
+              "every entry below is known to integrate.",
+              "",
+              "No topic SHA was tagged or pushed by this workflow; promoted",
+              "entries are pinned by SHA only and remain reachable through",
+              "their topic branch.",
+              "",
+              "| Topic branch | Previous SHA | New SHA (tip) |",
+              "| --- | --- | --- |",
+              rows.rstrip("\n"),
+          ]
+          if held:
+              body += [
+                  "",
+                  "Held back because the tip conflicted during automerge and",
+                  "was dropped from the candidate. These keep their existing",
+                  "pins:",
+                  "",
+              ]
+              body += [f"- `{i['name']}` (tip `{i['new'][:12]}`)" for i in held]
+              body += [
+                  "",
+                  "Resolve the conflict and update the rerere cache, then the",
+                  "next run picks the topic up again.",
+              ]
+          if data["missing"]:
+              body += [
+                  "",
+                  "Could not be resolved and were left untouched:",
+                  "",
+              ]
+              body += [f"- `{i['name']}`: {i['reason']}" for i in data["missing"]]
+          body += ["", f"Unchanged topics: {len(data['unchanged'])}."]
+
+          with open(os.environ["PR_BODY_FILE"], "w", encoding="utf-8") as handle:
+              handle.write("\n".join(body) + "\n")
+
+          count = len(survivors)
+          subject = (
+              f"qcom-next: sync {count} topic branch tip"
+              f"{'s' if count != 1 else ''}"
+          )
+          detail = (
+              "Record the current tip of every topic branch that moved since "
+              "the last\nsync. automerge was run first, so each tip is known "
+              "to integrate.\n\n"
+              "The promoted tips are intentionally recorded by SHA only; this "
+              "workflow does not create, push, or record topic tags.\n"
+          )
+          if held:
+              detail += (
+                  "\n"
+                  f"{len(held)} topic(s) conflicted and were held back at "
+                  "their existing pins.\n"
+              )
+          with open(os.environ["COMMIT_MSG_FILE"], "w", encoding="utf-8") as handle:
+              handle.write(f"{subject}\n\n{detail}")
+          PY
+
+          if git diff --quiet -- "$SYNC_CONFIG"; then
+            echo "::error title=qcom-next sync::tips survived automerge but $SYNC_CONFIG is unmodified"
+            exit 1
+          fi
+          git diff --stat -- "$SYNC_CONFIG"
+
+      - name: Commit, push and open the PR
+        id: pr
+        if: >-
+          steps.guard.outputs.proceed == 'true'
+          && steps.resolve.outputs.changed_count != '0'
+          && steps.validate.outputs.survivors != '0'
+          && inputs.dry_run != true
+        working-directory: kernel-config
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          PUSH_TOKEN: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          PR_BODY_FILE: ${{ runner.temp }}/pr_body.md
+          COMMIT_MSG_FILE: ${{ runner.temp }}/commit_msg.txt
+          PR_BRANCH: ${{ steps.apply.outputs.pr_branch }}
+          BASE_BRANCH: ${{ steps.guard.outputs.base_branch }}
+          SYNC_CONFIG: ${{ steps.settings.outputs.config }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
+          git add "$SYNC_CONFIG"
+          git commit -F "$COMMIT_MSG_FILE"
+
+          git remote set-url origin \
+            "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin "HEAD:refs/heads/${PR_BRANCH}"
+
+          url="$(python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          API = "https://api.github.com"
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ.get("GH_TOKEN", "")
+
+          with open(os.environ["COMMIT_MSG_FILE"], encoding="utf-8") as handle:
+              title = handle.readline().strip()
+          with open(os.environ["PR_BODY_FILE"], encoding="utf-8") as handle:
+              body = handle.read()
+
+          payload = json.dumps({
+              "title": title,
+              "head": os.environ["PR_BRANCH"],
+              "base": os.environ["BASE_BRANCH"],
+              "body": body,
+          }).encode("utf-8")
+
+          request = urllib.request.Request(f"{API}/repos/{repo}/pulls",
+                                           data=payload)
+          request.add_header("Accept", "application/vnd.github+json")
+          request.add_header("X-GitHub-Api-Version", "2022-11-28")
+          request.add_header("Content-Type", "application/json")
+          if token:
+              request.add_header("Authorization", f"Bearer {token}")
+          try:
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  print(json.loads(response.read())["html_url"])
+          except urllib.error.HTTPError as error:
+              detail = error.read().decode("utf-8", "replace")[:400]
+              print(f"creating the PR failed: {error.code} {detail}",
+                    file=sys.stderr)
+              raise SystemExit(1)
+          PY
+          )"
+          echo "pr_url=$url" >> "$GITHUB_OUTPUT"
+          echo "Opened $url"
+
+      # Tell the owning maintainers, through an issue per topic that mentions
+      # their team from topic_maintainers.json. GitHub mails every team member,
+      # and an issue still reaches them when every topic conflicted and no PR
+      # was opened at all. Runs even when an earlier step failed, so a conflict
+      # is never silently swallowed.
+      - name: Report conflicting topics to their maintainers
+        if: always() && steps.guard.outputs.proceed == 'true'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          CHANGES_FILE: ${{ runner.temp }}/changes.json
+          DROPPED_FILE: ${{ runner.temp }}/dropped.json
+          FALLBACK_CONFLICTS_FILE: ${{ runner.temp }}/fallback-conflicts.json
+          MAINTAINERS_FILE: kernel-config/topic_maintainers.json
+          LABEL: qcom-next-sync-conflict
+        with:
+          github-token: ${{ secrets.PAT || secrets.SPAT || github.token }}
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const label = process.env.LABEL;
+            const marker = (topic) => `<!-- qcom-next-sync-conflict: ${topic} -->`;
+            const runUrl =
+              `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const read = (path, fallback) => {
+              try {
+                return JSON.parse(fs.readFileSync(path, 'utf8'));
+              } catch (error) {
+                core.info(`could not read ${path}: ${error.message}`);
+                return fallback;
+              }
+            };
+
+            const dropped = read(process.env.DROPPED_FILE, []);
+            const fallbackConflicts = new Set(
+              read(process.env.FALLBACK_CONFLICTS_FILE, []));
+            const changes = read(process.env.CHANGES_FILE, { changed: [] });
+            const maintainers = read(process.env.MAINTAINERS_FILE, {});
+            const tipOf = new Map(
+              (changes.changed || []).map((item) => [item.name, item.new]));
+
+            // The label is how recovered topics are found again later, so it
+            // has to exist before the first issue is filed.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'b60205',
+                description: 'Topic tip failed to merge during qcom-next tip sync',
+              });
+            }
+
+            // A maintainers entry is a GitHub user or a team, exactly as
+            // add-reviewers.yml treats it.
+            const mentionCache = new Map();
+            async function mention(entry) {
+              if (mentionCache.has(entry)) return mentionCache.get(entry);
+              let text;
+              try {
+                await github.rest.users.getByUsername({ username: entry });
+                text = `@${entry}`;
+              } catch (error) {
+                text = error.status === 404 ? `@${owner}/${entry}` : `@${entry}`;
+              }
+              mentionCache.set(entry, text);
+              return text;
+            }
+
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: label, per_page: 100,
+            });
+            const existing = new Map();
+            for (const issue of open) {
+              const found = (issue.body || '')
+                .match(/<!-- qcom-next-sync-conflict: (.+?) -->/);
+              if (found) existing.set(found[1], issue);
+            }
+
+            for (const topic of dropped) {
+              const tip = tipOf.get(topic) || 'unknown';
+              const owners = maintainers[topic] || [];
+              const mentions = [];
+              for (const entry of owners) mentions.push(await mention(entry));
+              const who = mentions.length
+                ? mentions.join(' ')
+                : `_No maintainer is listed for this topic in \`topic_maintainers.json\`._`;
+              const needsRerere = fallbackConflicts.has(topic);
+              const state = needsRerere
+                ? [
+                  'The current tip was held back at its previously promoted SHA,',
+                  'but that retained pin also conflicted while building the',
+                  'candidate. The run stopped rather than retrying the same',
+                  'candidate.',
+                  '',
+                  'A rerere-cache update is required before this topic can be',
+                  'included with the current set of topic tips.',
+                ]
+                : [
+                  'The qcom-next tip sync tried to promote the current tip of this',
+                  'topic branch, but it conflicted while merging onto the baseline.',
+                  'The topic was held back at its previously promoted SHA so the',
+                  'other topics could still be promoted.',
+                ];
+
+              const body = [
+                marker(topic),
+                `### \`${topic}\` did not apply on the baseline`,
+                '',
+                who,
+                '',
+                ...state,
+                '',
+                '| Field | Value |',
+                '| --- | --- |',
+                `| Topic branch | \`${topic}\` |`,
+                `| Tip that failed | \`${tip}\` |`,
+                `| Run | ${runUrl} |`,
+                '',
+                'What to do:',
+                '',
+                '1. Reproduce the conflict by running automerge locally; the',
+                '   `merge.log` from the run above is attached as an artifact.',
+                '2. Resolve it and raise a PR on the rerere cache repository.',
+                '3. Once that PR is merged, the next sync run picks this topic',
+                '   up again and this issue closes automatically.',
+              ].join('\n');
+
+              const already = existing.get(topic);
+              if (already) {
+                // Comment rather than open a second issue for the same topic.
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: already.number,
+                  body: needsRerere
+                    ? [
+                      'The retained pin also conflicts with the current candidate.',
+                      'A rerere-cache update is required before retrying.',
+                      '',
+                      `Run: ${runUrl}`,
+                    ].join('\n')
+                    : [
+                      `Still conflicting as of \`${tip}\`.`,
+                      '',
+                      `Run: ${runUrl}`,
+                    ].join('\n'),
+                });
+                core.info(`commented on #${already.number} for ${topic}`);
+              } else {
+                const created = await github.rest.issues.create({
+                  owner, repo,
+                  title: `qcom-next: ${topic} tip does not apply on the baseline`,
+                  body,
+                  labels: [label],
+                });
+                core.info(`opened #${created.data.number} for ${topic}`);
+              }
+            }
+
+            // Anything that was failing and is not in this run's dropped list
+            // merged again, so close its issue.
+            for (const [topic, issue] of existing) {
+              if (dropped.includes(topic)) continue;
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: [
+                  `\`${topic}\` applied cleanly again, so this is resolved.`,
+                  '',
+                  `Run: ${runUrl}`,
+                ].join('\n'),
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number, state: 'closed',
+              });
+              core.info(`closed #${issue.number} for ${topic}`);
+            }
+
+            core.summary.addHeading('Conflicting topics reported', 3);
+            core.summary.addRaw(
+              dropped.length
+                ? `Filed or updated ${dropped.length} issue(s): ${dropped.join(', ')}.`
+                : 'No topic conflicted.');
+            await core.summary.write();
+
+      - name: Upload merge log
+        if: always() && steps.resolve.outputs.changed_count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qcom-next-sync-tips
+          path: |
+            ${{ runner.temp }}/merge.log
+            ${{ runner.temp }}/changes.json
+            ${{ runner.temp }}/dropped.json
+            ${{ runner.temp }}/fallback-conflicts.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### qcom-next sync topic tips"
+            echo ""
+            if [ "${{ steps.guard.outputs.proceed }}" != "true" ]; then
+              echo "Bailed out: \`${{ steps.guard.outputs.blocked_by }}\` already open against \`${{ steps.settings.outputs.config }}\`."
+              echo ""
+              echo "Merge or close it, then re-run."
+              exit 0
+            fi
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Config | \`${{ steps.settings.outputs.config }}\` |"
+            echo "| Tips from / repo recorded | \`${{ steps.settings.outputs.source_repo }}\` |"
+            echo "| Base branch | \`${{ steps.guard.outputs.base_branch }}\` |"
+            echo "| Topics moved | ${{ steps.resolve.outputs.changed_count }} |"
+            echo "| Topics unchanged | ${{ steps.resolve.outputs.unchanged_count }} |"
+            echo "| Topics unresolved | ${{ steps.resolve.outputs.missing_count }} |"
+            echo "| Dropped on conflict | ${{ steps.validate.outputs.dropped_count || '0' }} |"
+            echo "| Promoted | ${{ steps.validate.outputs.survivors || '0' }} |"
+            echo "| Dry run | ${{ inputs.dry_run == true }} |"
+            echo "| PR | ${{ steps.pr.outputs.pr_url || 'none' }} |"
+            echo ""
+            if [ "${{ steps.resolve.outputs.changed_count }}" = "0" ]; then
+              echo "No topic branch moved; nothing to promote."
+            elif [ "${{ steps.validate.outputs.survivors }}" = "0" ]; then
+              echo "Every moved topic conflicted during automerge; nothing was promoted."
+            elif [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "Dry run: automerge was run, but no branch or PR was created."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
